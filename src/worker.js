@@ -168,7 +168,7 @@ function fold(line) { const out = []; while (line.length > 74) { out.push(line.s
 const icsUtc = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 async function calendar(env) {
   const tz = (await getSetting(env, "tz")) || "Europe/Rome";
-  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, done, updated_at FROM items WHERE due_date IS NOT NULL").all()).results;
+  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, remind, done, updated_at FROM items WHERE due_date IS NOT NULL").all()).results;
   const all = (await env.DB.prepare("SELECT id, parent, text FROM items").all()).results;
   const byId = Object.fromEntries(all.map(r => [r.id, r]));
   const path = id => { const p = []; let c = byId[id]?.parent; for (let i = 0; c && byId[c] && i < 20; i++) { p.unshift(byId[c].text); c = byId[c].parent; } return p.join(" › "); };
@@ -185,6 +185,8 @@ async function calendar(env) {
     const desc = [path(r.id), r.notes].filter(Boolean).join("\n\n");
     L.push(fold("SUMMARY:" + icsEscape((r.done ? "✓ " : "") + r.text)));
     if (desc) L.push(fold("DESCRIPTION:" + icsEscape(desc)));
+    const alarmAt = r.done ? null : computeRemindAt(tz, r);
+    if (alarmAt) L.push("BEGIN:VALARM", "ACTION:DISPLAY", fold("DESCRIPTION:" + icsEscape(r.text)), "TRIGGER;VALUE=DATE-TIME:" + icsUtc(Date.parse(alarmAt)), "END:VALARM");
     L.push("END:VEVENT");
   }
   L.push("END:VCALENDAR");

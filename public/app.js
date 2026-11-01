@@ -402,10 +402,11 @@ function moveItem(id, day, time) {
   it.due_date = day; if (time !== undefined) it.due_time = time; selDay = day;
   toast("Spostato a " + dayLabel(day, true) + (time ? ", " + time : "")); commit();
 }
-function dayParts(d, dated, s0, e0) {
+function dayParts(d, dated, s0, e0, idx) {
   const t = today();
   const list = dated.filter(x => x.due_date === d).sort(byDue);
-  const cls = (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "");
+  const late = d === t ? dated.filter(x => x.due_date < t && !x.done).sort(byDue) : [];
+  const cls = (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "") + (idx % 2 ? " alt" : "") + (idx > 0 ? " vl" : "");
   const colorOfIt = it => { const cat = catOf(it.id); return (cat && cat.color) || COLORS[5]; };
   const iconOfIt = it => { const cat = catOf(it.id); return (cat && cat.icon) || ""; };
   const dnd = (el, getTime) => {
@@ -414,9 +415,10 @@ function dayParts(d, dated, s0, e0) {
   const head = h("button", { class: "wk-h" + cls, onclick: () => { selDay = d; render(); } },
     h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8))));
   const noTime = list.filter(x => !x.due_time);
+  const small = [...late.map(it => ({ it, late: true })), ...noTime.map(it => ({ it }))];
   const allday = h("div", { class: "wk-allday" + cls },
-    noTime.slice(0, 3).map(it => { const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": colorOfIt(it) }, draggable: "true", "data-id": it.id, title: it.text, onclick: () => openItem(it.id) }, h("span", { class: "wk-ic" }, iconOfIt(it)), h("span", { class: "wk-tx" }, it.text)); dnd(b); return b; }),
-    noTime.length > 3 ? h("button", { class: "wk-more", onclick: () => { selDay = d; render(); } }, "+" + (noTime.length - 3)) : null);
+    small.slice(0, 3).map(({ it, late: isLate }) => { const b = h("button", { class: "wk-chip" + (it.done ? " done" : "") + (isLate ? " late" : ""), style: { "--c": colorOfIt(it) }, draggable: "true", "data-id": it.id, title: isLate ? it.text + " · scaduta il " + dayLabel(it.due_date, true) : it.text, onclick: () => openItem(it.id) }, h("span", { class: "wk-ic" }, iconOfIt(it)), h("span", { class: "wk-tx" }, it.text)); dnd(b); return b; }),
+    small.length > 3 ? h("button", { class: "wk-more", onclick: () => { selDay = d; render(); } }, "+" + (small.length - 3)) : null);
   allday.addEventListener("dragover", e => { e.preventDefault(); allday.classList.add("drop"); });
   allday.addEventListener("dragleave", () => allday.classList.remove("drop"));
   allday.addEventListener("drop", e => { e.preventDefault(); allday.classList.remove("drop"); moveItem(e.dataTransfer.getData("text/plain"), d, null); });
@@ -438,15 +440,7 @@ function dayParts(d, dated, s0, e0) {
     const m = Math.max(0, Math.min(23 * 60 + 45, Math.round(((y / ROW + s0) * 60) / 15) * 15));
     moveItem(e.dataTransfer.getData("text/plain"), d, hhmm(m));
   });
-  const cell = time => {
-    const its = list.filter(x => x.due_time === time);
-    const c = h("div", { class: "wk-cell" + cls }, its.map(it => { const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": colorOfIt(it) }, draggable: "true", "data-id": it.id, title: it.text, onclick: () => openItem(it.id) }, h("span", { class: "wk-ic" }, iconOfIt(it)), h("span", { class: "wk-tx" }, it.text)); dnd(b); return b; }));
-    c.addEventListener("dragover", e => { e.preventDefault(); c.classList.add("drop"); });
-    c.addEventListener("dragleave", () => c.classList.remove("drop"));
-    c.addEventListener("drop", e => { e.preventDefault(); c.classList.remove("drop"); moveItem(e.dataTransfer.getData("text/plain"), d, time); });
-    return c;
-  };
-  return { head, allday, col, cell, count: list.filter(x => !x.done).length, total: list.length };
+  return { head, allday, col, count: list.filter(x => !x.done).length + late.length, total: list.length + late.length };
 }
 function axis(s0, e0) {
   const a = h("div", { class: "tl-axis", style: { height: (e0 - s0) * ROW + "px" } });
@@ -460,11 +454,9 @@ function weekBoard(dated) {
   const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
   const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
   const [s0, e0] = hourRange(inWeek);
-  const parts = days.map(d => dayParts(d, dated, s0, e0));
-  const times = [...new Set(inWeek.filter(x => x.due_time).map(x => x.due_time))].sort();
+  const parts = days.map((d, i) => dayParts(d, dated, s0, e0, i));
   const desk = h("div", { class: "wk-desk" },
-    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday),
-    times.map(tm => [h("span", { class: "wk-time" }, tm), parts.map(p => p.cell(tm))]));
+    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
   // iPhone: week strip with counts + the selected day with its hours
   const dayList = dated.filter(x => x.due_date === selDay);
   const timed = dayList.filter(x => x.due_time).map(x => +x.due_time.slice(0, 2));
@@ -472,7 +464,7 @@ function weekBoard(dated) {
   if (nowH !== null && timed.length) timed.push(nowH);
   const ms = timed.length ? Math.max(0, Math.min(...timed) - 1) : 8;
   const me = timed.length ? Math.min(24, Math.max(Math.max(...timed) + 2, ms + 5)) : 9;
-  const sp = dayParts(selDay, dated, ms, me);
+  const sp = dayParts(selDay, dated, ms, me, 0);
   const strip = h("div", { class: "wk-strip" }, days.map((d, i) => {
     const { count, total } = parts[i], doneN = total - count;
     return h("button", { class: "wk-sd" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (total ? "" : " empty") + (total && !count ? " full" : ""), onclick: () => { selDay = d; render(); } },
@@ -493,12 +485,14 @@ function renderToday(inner) {
   const dated = Object.values(items).filter(x => x.parent && x.due_date);
   const late = dated.filter(x => x.due_date < t && !x.done && visible(x)).sort(byDue);
   const todayOpen = dated.filter(x => x.due_date === t && !x.done).length;
+  const todayDone = dated.filter(x => x.due_date === t && x.done).length;
   inner.append(h("div", { class: "hero" },
     h("div", { class: "date" }, GIORNI[d.getDay()] + " " + d.getDate() + " " + MESI[d.getMonth()]),
     h("div", { class: "big-title" }, greeting()),
     h("div", { class: "pills" },
-      todayOpen ? h("span", { class: "pill" }, h("b", null, todayOpen), "oggi") : (late.length ? null : h("span", { class: "pill green" }, "Tutto libero ✓")),
-      late.length ? h("span", { class: "pill red" }, h("b", null, late.length), late.length === 1 ? "scaduto" : "scaduti") : null)));
+      h("span", { class: "pill" + (todayOpen ? "" : " zero") }, h("b", null, todayOpen), "oggi"),
+      h("span", { class: "pill green" + (todayDone ? "" : " zero") }, h("b", null, todayDone), todayDone === 1 ? "fatta" : "fatte"),
+      h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
   const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
@@ -691,8 +685,10 @@ async function openSettings() {
     h("div", { class: "form-group-title" }, "App su Mac"),
     h("div", { class: "form-note", style: { margin: "0 0 20px" } }, "Per averla come un'app a sé, a schermo intero e con la sua icona: in Safari scegli ", h("b", null, "File › Aggiungi al Dock"), ". Nel menu di Chrome: ", h("b", null, "Salva e condividi › Installa Organize"), "."),
     h("div", { class: "form-group-title" }, "Calendario"),
-    h("div", { class: "form-group" }, h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
-    h("div", { class: "form-note" }, h("b", null, "iPhone/Mac: "), "Impostazioni › Calendario › Account › Aggiungi account › Altro › Aggiungi calendario sottoscritto, e incolla l'indirizzo. ", h("br"), h("b", null, "Google Calendar: "), "dal computer, calendar.google.com › Altri calendari › + › Da URL. Google aggiorna questi calendari solo ogni qualche ora."),
+    h("div", { class: "form-group" },
+      h("a", { class: "field btn", href: s.calendarUrl.replace(/^https?:/, "webcal:"), style: { textDecoration: "none" } }, h("span", { class: "lab" }, "Aggiungi al Calendario Apple")),
+      h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
+    h("div", { class: "form-note" }, h("b", null, "Apple: "), "premi il pulsante qui sopra da Safari e conferma ", h("i", null, "Iscriviti"), ". Gli avvisi che hai scelto arrivano anche da Calendario. ", h("br"), h("b", null, "Google Calendar: "), "dal computer, calendar.google.com › Altri calendari › + › Da URL, e incolla l'indirizzo. Google lo aggiorna solo ogni qualche ora e non usa i nostri avvisi: per quelli usa gli avvisi di Organize."),
     h("div", { class: "form-group-title" }, "Account"),
     h("div", { class: "form-group" },
       h("button", { class: "field btn", onclick: changePassword }, "Cambia password"),
