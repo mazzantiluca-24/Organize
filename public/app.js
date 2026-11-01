@@ -87,6 +87,7 @@ const recentDone = new Set();
 let focusReq = null;     // {id, sel:'t'|'add', at:'end'}
 let addingUnder = null;  // id whose child add-row is open
 let searchQ = "";
+let searchOpen = false;  // Mac: il campo di ricerca appare solo dopo aver toccato la lente
 let syncState = "ok";
 
 const lsGet = (k, d) => { try { const v = localStorage.getItem(LS + k); return v === null ? d : JSON.parse(v); } catch (_) { return d; } };
@@ -185,7 +186,7 @@ function parseHash() {
   return { v: isMobile() ? "home" : "today" };
 }
 function go(h) { if (location.hash === "#" + h) { route = parseHash(); render(); } else location.hash = h; }
-window.addEventListener("hashchange", () => { route = parseHash(); searchQ = ""; addingUnder = null; render(); const m = $(".main"); if (m) m.scrollTop = 0; });
+window.addEventListener("hashchange", () => { route = parseHash(); searchQ = ""; searchOpen = false; addingUnder = null; render(); const m = $(".main"); if (m) m.scrollTop = 0; });
 
 // ================= render =================
 function render() {
@@ -215,8 +216,31 @@ function counts() {
   return { td, sc, all, dn };
 }
 
+// numeri delle tre pillole (Oggi / Fatte / Scadute), usati nella barra laterale e nel titolo di Oggi
+function dayStats() {
+  const t = today(), dated = Object.values(items).filter(x => x.parent && x.due_date);
+  return {
+    open: dated.filter(x => x.due_date === t && !x.done).length,
+    done: dated.filter(x => x.due_date === t && x.done).length,
+    late: dated.filter(x => x.due_date < t && !x.done && visible(x)).length,
+  };
+}
+function setSearchOpen(on) {
+  searchOpen = on;
+  const s = $(".side .search"), b = $(".search-btn");
+  if (s) s.classList.toggle("open", on || !!searchQ);
+  if (b) b.classList.toggle("on", on || !!searchQ);
+  if (on && s) { const i = s.querySelector("input"); if (i) i.focus(); }
+}
+document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && $(".side .search")) { e.preventDefault(); setSearchOpen(true); } });
+
 function renderSide() {
-  const c = counts();
+  const c = counts(), st = dayStats();
+  const spill = (cls, n, label, on, fn) => h("button", { class: "sp" + (cls ? " " + cls : "") + (n ? "" : " zero") + (on ? " on" : ""), onclick: fn }, h("b", null, n), h("span", null, label));
+  const pillsBar = h("div", { class: "side-pills" },
+    spill("", st.open, "oggi", route.v === "today" && !searchQ, () => { searchQ = ""; go("today"); }),
+    spill("green", st.done, st.done === 1 ? "fatta" : "fatte", route.v === "done" && !searchQ, () => { searchQ = ""; go("done"); }),
+    spill("red", st.late, st.late === 1 ? "scaduta" : "scadute", false, () => { searchQ = ""; go("today"); }));
   const tile = (v, label, n, color, ic) => h("button", { class: "tile" + (route.v === v && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go(v); } },
     h("span", { class: "dot" }, icon(ic)), h("span", { class: "n" }, n || ""), h("span", { class: "l" }, label));
   const catList = cats().map(cat => h("button", {
@@ -226,8 +250,13 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("div", { class: "brand", title: "Organize" }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
-      h("label", { class: "search" }, icon("search"), h("input", { type: "search", placeholder: "Cerca", value: searchQ, oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); } })),
+      h("div", { class: "side-head" }, h("div", { class: "brand", title: "Organize" }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
+        type: "search", placeholder: "Cerca", value: searchQ,
+        oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
+        onkeydown: e => { if (e.key === "Escape") { e.target.value = ""; searchQ = ""; renderMainOnly(); $(".layout").classList.toggle("in-list", route.v !== "home"); setSearchOpen(false); e.target.blur(); } },
+        onblur: () => { if (!searchQ) setSearchOpen(false); } })),
+      pillsBar,
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
         tile("scheduled", "Programmati", c.sc, "var(--red)", "cal"),
@@ -484,8 +513,7 @@ function renderToday(inner) {
   const t = today(), d = new Date(); if (!selDay) selDay = t;
   const dated = Object.values(items).filter(x => x.parent && x.due_date);
   const late = dated.filter(x => x.due_date < t && !x.done && visible(x)).sort(byDue);
-  const todayOpen = dated.filter(x => x.due_date === t && !x.done).length;
-  const todayDone = dated.filter(x => x.due_date === t && x.done).length;
+  const { open: todayOpen, done: todayDone } = dayStats();
   inner.append(h("div", { class: "hero" },
     h("div", { class: "date" }, GIORNI[d.getDay()] + " " + d.getDate() + " " + MESI[d.getMonth()]),
     h("div", { class: "big-title" }, greeting()),

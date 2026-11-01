@@ -2,7 +2,7 @@
   --bg:#fbfbfa; --bg2:#ffffff; --side:#f4f4f2; --fill:rgba(55,53,47,.08); --fill2:rgba(55,53,47,.05);
   --label:#2f2f2d; --label2:rgba(55,53,47,.62); --label3:rgba(55,53,47,.32); --sep:rgba(55,53,47,.10);
   --blue:#2383e2; --red:#e5484d; --orange:#e8890c; --green:#2eaa6e;
-  --radius:12px; --sideW:264px;
+  --radius:12px; --sideW:280px;
   --shadow:0 1px 2px rgba(15,15,15,.04),0 0 0 1px rgba(55,53,47,.07);
   --shadow-lg:0 12px 40px rgba(15,15,15,.18);
   --safeT:env(safe-area-inset-top,0px); --safeB:env(safe-area-inset-bottom,0px);
@@ -51,8 +51,8 @@ svg{stroke-width:1.75}
 .side-head{display:flex;align-items:center;justify-content:space-between;padding:6px 8px 12px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;letter-spacing:.02em}
 .brand{gap:8px}
-.brand .b-tile{width:32px;height:32px;flex:none}
-.brand .wm{height:22px;width:auto;flex:none;mix-blend-mode:multiply}
+.brand .b-tile{width:34px;height:34px;flex:none}
+.brand .wm{height:26px;width:auto;flex:none;mix-blend-mode:multiply}
 :root[data-theme=dark] .brand .wm{filter:invert(1) hue-rotate(180deg);mix-blend-mode:screen}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .brand .wm{filter:invert(1) hue-rotate(180deg);mix-blend-mode:screen}}
 .head-btns{display:flex;gap:2px;align-items:center}
@@ -65,7 +65,23 @@ svg{stroke-width:1.75}
 .search input{flex:1;border:0;background:none;outline:none;min-width:0;font-size:15px;color:var(--label)}
 .search input::placeholder{color:var(--label2)}
 .search svg{width:15px;height:15px;flex:none}
+/* Mac: tre pillole al posto dell'elenco, ricerca = lente in alto */
+.side-pills{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:2px 2px 18px}
+.sp{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:7px 2px 6px;border-radius:14px;font-size:12px;font-weight:650;line-height:1.1;background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);transition:filter .15s}
+.sp b{font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.sp.green{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
+.sp.red{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red)}
+.sp.zero{opacity:.45}
+.sp:hover{filter:brightness(.96)}
+.sp.on{box-shadow:inset 0 0 0 1.5px currentColor}
+.search-btn.on{background:var(--fill);color:var(--label)}
+@media (max-width:799px){.side-pills,.head-btns .search-btn{display:none}}
 .tiles{display:flex;flex-direction:column;gap:1px;margin:0 2px 18px}
+@media (min-width:800px){
+  .search:not(.open),.tiles,.hero .pills{display:none}
+  .head-btns .icon-btn{width:28px;height:28px}
+  .search{margin-bottom:12px}
+}
 .tile{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;text-align:left;min-height:34px;color:var(--label)}
 .tile:hover{background:var(--fill2)}
 .tile .dot{width:20px;height:20px;display:grid;place-items:center;color:var(--label2);flex:none;order:1}
