@@ -226,7 +226,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("div", { class: "brand" }, h("img", { src: "/logo-tile.png", alt: "" }), "Organize"), h("span", { class: "head-btns" }, FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("div", { class: "brand", title: "Organize" }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" }, icon("search"), h("input", { type: "search", placeholder: "Cerca", value: searchQ, oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); } })),
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
@@ -242,7 +242,7 @@ function renderSide() {
 function renderMainOnly() { const m = $(".main"); if (m) m.replaceWith(renderMain()); }
 
 function renderMain() {
-  const inner = h("div", { class: "main-inner" });
+  const inner = h("div", { class: "main-inner" + (route.v === "today" && !searchQ ? " wide" : "") });
   const top = h("div", { class: "topbar" }, h("button", { class: "back", onclick: () => { searchQ = ""; go("home"); } }, icon("back"), "Organize"));
   inner.append(top);
   if (searchQ) { renderSearch(inner); return h("main", { class: "main" }, inner); }
@@ -378,24 +378,63 @@ function ensureInbox() {
   if (all.length) return all[0].id;
   const c = mkItem("", "Promemoria", { color: COLORS[5], icon: "📋" }); return c.id;
 }
+let selDay = null, wkStart = null;
+const DOW = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function weekBoard(dated) {
+  const t = today(); if (!selDay) selDay = t; if (!wkStart) wkStart = t;
+  const days = [...Array(7)].map((_, i) => addDays(wkStart, i));
+  const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
+  const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
+  const chip = it => {
+    const cat = catOf(it.id), c = (cat && cat.color) || COLORS[5];
+    const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": c }, draggable: "true", title: it.text, onclick: () => openItem(it.id) },
+      h("span", { class: "wk-ic" }, (cat && cat.icon) || ""), h("span", { class: "wk-body" }, h("span", { class: "wk-tx" }, it.text), it.due_time ? h("span", { class: "wk-tm" }, it.due_time) : null));
+    b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", it.id); e.dataTransfer.effectAllowed = "move"; });
+    return b;
+  };
+  const cols = days.map((d, i) => {
+    const list = dated.filter(x => x.due_date === d).sort(byDue);
+    const col = h("div", { class: "wk-col" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "") },
+      h("button", { class: "wk-day", onclick: () => { selDay = d; render(); } }, h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8)))),
+      h("div", { class: "wk-items" }, list.slice(0, 4).map(chip), list.length > 4 ? h("button", { class: "wk-more", onclick: () => { selDay = d; render(); } }, "+" + (list.length - 4)) : null));
+    col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drop"); });
+    col.addEventListener("dragleave", () => col.classList.remove("drop"));
+    col.addEventListener("drop", e => {
+      e.preventDefault(); col.classList.remove("drop");
+      const id = e.dataTransfer.getData("text/plain");
+      if (items[id] && items[id].due_date !== d) { items[id].due_date = d; selDay = d; toast("Spostato a " + dayLabel(d, true)); commit(); }
+    });
+    return col;
+  });
+  return h("div", { class: "wk" },
+    h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, label),
+      h("div", { class: "wk-nav" },
+        (wkStart !== t || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = t; render(); } }, "Oggi") : null,
+        h("button", { class: "icon-btn", title: "Settimana prima", onclick: () => { wkStart = addDays(wkStart, -7); selDay = wkStart; render(); } }, icon("back")),
+        h("button", { class: "icon-btn", title: "Settimana dopo", onclick: () => { wkStart = addDays(wkStart, 7); selDay = wkStart; render(); } }, icon("chev")))),
+    h("div", { class: "wk-grid" }, cols));
+}
 function renderToday(inner) {
-  const t = today(), d = new Date();
-  const open = Object.values(items).filter(x => x.parent && x.due_date && visible(x));
-  const late = open.filter(x => x.due_date < t && !x.done).sort(byDue), tod = open.filter(x => x.due_date === t).sort(byDue);
-  const soon = open.filter(x => x.due_date > t && x.due_date <= addDays(t, 7)).sort(byDue);
-  const n = late.length + tod.filter(x => !x.done).length;
+  const t = today(), d = new Date(); if (!selDay) selDay = t;
+  const dated = Object.values(items).filter(x => x.parent && x.due_date);
+  const late = dated.filter(x => x.due_date < t && !x.done && visible(x)).sort(byDue);
+  const todayOpen = dated.filter(x => x.due_date === t && !x.done).length;
   inner.append(h("div", { class: "hero" },
     h("div", { class: "date" }, GIORNI[d.getDay()] + " " + d.getDate() + " " + MESI[d.getMonth()]),
     h("div", { class: "big-title" }, greeting()),
-    h("div", { class: "sub" }, n ? `Hai ${n} ${n === 1 ? "promemoria" : "promemoria"} in scadenza` + (late.length ? `, di cui ${late.length} ${late.length === 1 ? "scaduto" : "scaduti"}.` : " oggi.") : "Niente in scadenza oggi. Goditi la giornata.")));
-  if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti ", h("small", null, late.length))); inner.append(panel(itemList(late, { flat: true, path: true }))); }
-  inner.append(h("div", { class: "group-h" }, "Oggi ", tod.length ? h("small", null, tod.length) : null));
-  const l = itemList(tod, { flat: true, path: true });
-  l.append(addRow("today", "Nuovo promemoria per oggi", () => ({ parent: ensureInbox(), extra: { due_date: today(), remind: "morning" } })));
+    h("div", { class: "pills" },
+      todayOpen ? h("span", { class: "pill" }, h("b", null, todayOpen), "oggi") : (late.length ? null : h("span", { class: "pill green" }, "Tutto libero ✓")),
+      late.length ? h("span", { class: "pill red" }, h("b", null, late.length), late.length === 1 ? "scaduto" : "scaduti") : null)));
+  inner.append(weekBoard(dated));
+  if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
+  const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
+  inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
+  const l = itemList(dayList, { flat: true, path: true });
+  l.append(addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } })));
   inner.append(panel(l));
-  if (soon.length) { inner.append(h("div", { class: "group-h" }, "Prossimi 7 giorni ", h("small", null, soon.length))); inner.append(panel(itemList(soon, { flat: true, path: true }))); }
   if (cats().length) {
-    inner.append(h("div", { class: "group-h" }, "Le tue categorie"));
+    inner.append(h("div", { class: "group-h" }, "Categorie"));
     inner.append(h("div", { class: "cat-cards" }, cats().map(cat => {
       const all = desc(cat.id), doneN = all.filter(k => items[k].done).length, openN = all.length - doneN;
       return h("button", { class: "cat-card", style: { "--c": cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) },
