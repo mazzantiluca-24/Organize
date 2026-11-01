@@ -381,39 +381,101 @@ function ensureInbox() {
 let selDay = null, wkStart = null;
 const DOW = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const ROW = 52, DUR = 48;
+const mins = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+const hhmm = m => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+function hourRange(list) {
+  let s = 8, e = 20;
+  for (const it of list) if (it.due_time) { const hr = +it.due_time.slice(0, 2); s = Math.min(s, hr); e = Math.max(e, hr + 2); }
+  return [Math.max(0, s), Math.min(24, e)];
+}
+function layoutDay(list) {
+  const evs = list.filter(x => x.due_time).map(it => ({ it, start: mins(it.due_time), end: mins(it.due_time) + DUR })).sort((a, b) => a.start - b.start);
+  const out = []; let cl = [], clEnd = -1;
+  const flush = () => { if (!cl.length) return; const lanes = []; cl.forEach(ev => { let l = lanes.findIndex(x => x <= ev.start); if (l < 0) { l = lanes.length; lanes.push(0); } lanes[l] = ev.end; ev.lane = l; }); cl.forEach(ev => ev.lanes = lanes.length); out.push(...cl); cl = []; };
+  evs.forEach(ev => { if (cl.length && ev.start >= clEnd) flush(); clEnd = cl.length ? Math.max(clEnd, ev.end) : ev.end; cl.push(ev); });
+  flush(); return out;
+}
+function moveItem(id, day, time) {
+  const it = items[id]; if (!it) return;
+  if (it.due_date === day && (time === undefined || it.due_time === time)) return;
+  it.due_date = day; if (time !== undefined) it.due_time = time; selDay = day;
+  toast("Spostato a " + dayLabel(day, true) + (time ? ", " + time : "")); commit();
+}
+function dayParts(d, dated, s0, e0) {
+  const t = today();
+  const list = dated.filter(x => x.due_date === d).sort(byDue);
+  const cls = (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "");
+  const colorOfIt = it => { const cat = catOf(it.id); return (cat && cat.color) || COLORS[5]; };
+  const iconOfIt = it => { const cat = catOf(it.id); return (cat && cat.icon) || ""; };
+  const dnd = (el, getTime) => {
+    el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", el.dataset.id); e.dataTransfer.effectAllowed = "move"; });
+  };
+  const head = h("button", { class: "wk-h" + cls, onclick: () => { selDay = d; render(); } },
+    h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8))));
+  const noTime = list.filter(x => !x.due_time);
+  const allday = h("div", { class: "wk-allday" + cls },
+    noTime.slice(0, 3).map(it => { const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": colorOfIt(it) }, draggable: "true", "data-id": it.id, title: it.text, onclick: () => openItem(it.id) }, h("span", { class: "wk-ic" }, iconOfIt(it)), h("span", { class: "wk-tx" }, it.text)); dnd(b); return b; }),
+    noTime.length > 3 ? h("button", { class: "wk-more", onclick: () => { selDay = d; render(); } }, "+" + (noTime.length - 3)) : null);
+  allday.addEventListener("dragover", e => { e.preventDefault(); allday.classList.add("drop"); });
+  allday.addEventListener("dragleave", () => allday.classList.remove("drop"));
+  allday.addEventListener("drop", e => { e.preventDefault(); allday.classList.remove("drop"); moveItem(e.dataTransfer.getData("text/plain"), d, null); });
+  const col = h("div", { class: "tl-col" + cls, style: { height: (e0 - s0) * ROW + "px" } });
+  layoutDay(list).forEach(ev => {
+    const it = ev.it;
+    const b = h("button", { class: "tl-ev" + (it.done ? " done" : ""), draggable: "true", "data-id": it.id, title: it.text + " · " + it.due_time, style: {
+      "--c": colorOfIt(it), top: ((ev.start / 60 - s0) * ROW + 1) + "px", height: (DUR / 60 * ROW - 2) + "px",
+      left: `calc(${ev.lane / ev.lanes * 100}% + 2px)`, width: `calc(${100 / ev.lanes}% - 4px)` }, onclick: () => openItem(it.id) },
+      h("span", { class: "wk-tm" }, it.due_time), " ", iconOfIt(it) ? iconOfIt(it) + " " : "", it.text);
+    dnd(b); col.append(b);
+  });
+  if (d === t) { const n = new Date(), m = n.getHours() * 60 + n.getMinutes(); if (m / 60 >= s0 && m / 60 <= e0) col.append(h("div", { class: "tl-now", style: { top: ((m / 60 - s0) * ROW) + "px" } })); }
+  col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drop"); });
+  col.addEventListener("dragleave", () => col.classList.remove("drop"));
+  col.addEventListener("drop", e => {
+    e.preventDefault(); col.classList.remove("drop");
+    const y = e.clientY - col.getBoundingClientRect().top;
+    const m = Math.max(0, Math.min(23 * 60 + 45, Math.round(((y / ROW + s0) * 60) / 15) * 15));
+    moveItem(e.dataTransfer.getData("text/plain"), d, hhmm(m));
+  });
+  return { head, allday, col, count: list.filter(x => !x.done).length };
+}
+function axis(s0, e0) {
+  const a = h("div", { class: "tl-axis", style: { height: (e0 - s0) * ROW + "px" } });
+  for (let hr = s0; hr < e0; hr++) a.append(h("span", { style: { top: (hr - s0) * ROW + "px" } }, pad(hr)));
+  return a;
+}
 function weekBoard(dated) {
   const t = today(); if (!selDay) selDay = t; if (!wkStart) wkStart = t;
   const days = [...Array(7)].map((_, i) => addDays(wkStart, i));
   const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
   const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
-  const chip = it => {
-    const cat = catOf(it.id), c = (cat && cat.color) || COLORS[5];
-    const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": c }, draggable: "true", title: it.text, onclick: () => openItem(it.id) },
-      h("span", { class: "wk-ic" }, (cat && cat.icon) || ""), h("span", { class: "wk-body" }, h("span", { class: "wk-tx" }, it.text), it.due_time ? h("span", { class: "wk-tm" }, it.due_time) : null));
-    b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", it.id); e.dataTransfer.effectAllowed = "move"; });
-    return b;
-  };
-  const cols = days.map((d, i) => {
-    const list = dated.filter(x => x.due_date === d).sort(byDue);
-    const col = h("div", { class: "wk-col" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "") },
-      h("button", { class: "wk-day", onclick: () => { selDay = d; render(); } }, h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8)))),
-      h("div", { class: "wk-items" }, list.slice(0, 4).map(chip), list.length > 4 ? h("button", { class: "wk-more", onclick: () => { selDay = d; render(); } }, "+" + (list.length - 4)) : null));
-    col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drop"); });
-    col.addEventListener("dragleave", () => col.classList.remove("drop"));
-    col.addEventListener("drop", e => {
-      e.preventDefault(); col.classList.remove("drop");
-      const id = e.dataTransfer.getData("text/plain");
-      if (items[id] && items[id].due_date !== d) { items[id].due_date = d; selDay = d; toast("Spostato a " + dayLabel(d, true)); commit(); }
-    });
-    return col;
-  });
-  return h("div", { class: "wk" },
+  const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
+  const [s0, e0] = hourRange(inWeek);
+  const parts = days.map(d => dayParts(d, dated, s0, e0));
+  const desk = h("div", { class: "wk-desk" },
+    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
+  // iPhone: week strip with counts + the selected day with its hours
+  const dayList = dated.filter(x => x.due_date === selDay);
+  const timed = dayList.filter(x => x.due_time).map(x => +x.due_time.slice(0, 2));
+  const nowH = selDay === t ? new Date().getHours() : null;
+  if (nowH !== null && timed.length) timed.push(nowH);
+  const ms = timed.length ? Math.max(0, Math.min(...timed) - 1) : 8;
+  const me = timed.length ? Math.min(24, Math.max(Math.max(...timed) + 2, ms + 5)) : 9;
+  const sp = dayParts(selDay, dated, ms, me);
+  const strip = h("div", { class: "wk-strip" }, days.map((d, i) => {
+    const n = parts[i].count;
+    return h("button", { class: "wk-sd" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (n ? "" : " empty"), onclick: () => { selDay = d; render(); } },
+      h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8))), h("span", { class: "wk-cnt" }, n || ""));
+  }));
+  const mob = h("div", { class: "wk-mob" }, strip, h("div", { class: "wk-mday" }, sp.allday, timed.length ? h("div", { class: "tl-wrap" }, axis(ms, me), sp.col) : null));
+  return h("div", { class: "wk", style: { "--row": ROW + "px" } },
     h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, label),
       h("div", { class: "wk-nav" },
         (wkStart !== t || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = t; render(); } }, "Oggi") : null,
         h("button", { class: "icon-btn", title: "Settimana prima", onclick: () => { wkStart = addDays(wkStart, -7); selDay = wkStart; render(); } }, icon("back")),
         h("button", { class: "icon-btn", title: "Settimana dopo", onclick: () => { wkStart = addDays(wkStart, 7); selDay = wkStart; render(); } }, icon("chev")))),
-    h("div", { class: "wk-grid" }, cols));
+    desk, mob);
 }
 function renderToday(inner) {
   const t = today(), d = new Date(); if (!selDay) selDay = t;
