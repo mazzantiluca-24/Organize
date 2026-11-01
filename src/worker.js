@@ -82,7 +82,7 @@ function computeRemindAt(tz, it) {
 }
 
 // ---------- items ----------
-const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "remind", "repeat", "notes", "color", "icon"];
+const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "remind", "repeat", "notes", "color", "icon", "priority"];
 function clean(it) {
   const s = v => (v === undefined || v === null || v === "" ? null : String(v).slice(0, 5000));
   return {
@@ -94,6 +94,7 @@ function clean(it) {
     collapsed: it.collapsed ? 1 : 0,
     due_date: /^\d{4}-\d{2}-\d{2}$/.test(it.due_date || "") ? it.due_date : null,
     due_time: /^\d{2}:\d{2}$/.test(it.due_time || "") ? it.due_time : null,
+    priority: [1, 2, 3].includes(Number(it.priority)) ? Number(it.priority) : 0,
     remind: s(it.remind), repeat: s(it.repeat), notes: s(it.notes), color: s(it.color), icon: s(it.icon),
   };
 }

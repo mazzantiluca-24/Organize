@@ -8,7 +8,7 @@ function h(tag, attrs, ...kids) {
     if (v === null || v === undefined || v === false) continue;
     if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else if (k === "class") el.className = v;
-    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else if (k === "style" && typeof v === "object") { for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith("--")) el.style.setProperty(sk, sv); else el.style[sk] = sv; } }
     else if (k === "html") el.innerHTML = v;
     else el.setAttribute(k, v === true ? "" : v);
   }
@@ -34,6 +34,8 @@ const I = {
   bell: '<path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
 };
 const icon = n => svg(I[n]);
@@ -54,7 +56,13 @@ function dayLabel(s, long) {
   return d.getFullYear() !== new Date().getFullYear() ? base + " " + d.getFullYear() : base;
 }
 const REMIND = { none: "Nessuno", morning: "Il giorno stesso alle 9", at: "All'ora della scadenza", "15m": "15 minuti prima", "1h": "1 ora prima", "1d": "Il giorno prima" };
+const PRIO = ["", "Bassa", "Media", "Alta"];
 const REPEAT = { "": "Mai", daily: "Ogni giorno", weekly: "Ogni settimana", monthly: "Ogni mese", yearly: "Ogni anno" };
+function applyTheme() {
+  const t = lsGet("theme", "auto"), root = document.documentElement;
+  if (t === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", t);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { if (!m.dataset.o) m.dataset.o = m.content; m.content = t === "auto" ? m.dataset.o : (t === "dark" ? "#191919" : "#fbfbfa"); });
+}
 const isMobile = () => matchMedia("(max-width: 799px)").matches;
 
 // ================= state =================
@@ -123,7 +131,7 @@ async function pull() {
   const data = await api("/api/items");
   const next = {}; const nextSynced = {};
   for (const r of data.items) {
-    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon };
+    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
   items = next; synced = nextSynced; saveLocal();
@@ -133,7 +141,7 @@ function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
 
 function mkItem(parent, text, extra) {
-  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, remind: null, repeat: null, notes: null, color: null, icon: null, ...extra };
+  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
   items[it.id] = it; return it;
 }
 function removeItem(id) { desc(id).concat(id).forEach(k => delete items[k]); }
@@ -198,15 +206,15 @@ function counts() {
 function renderSide() {
   const c = counts();
   const tile = (v, label, n, color, ic) => h("button", { class: "tile" + (route.v === v && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go(v); } },
-    h("span", { class: "dot", style: { background: color } }, icon(ic)), h("span", { class: "n" }, n), h("span", { class: "l" }, label));
+    h("span", { class: "dot" }, icon(ic)), h("span", { class: "n" }, n || ""), h("span", { class: "l" }, label));
   const catList = cats().map(cat => h("button", {
       class: "cat" + (route.v === "cat" && route.id === cat.id && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("c-" + cat.id); },
     },
-    h("span", { class: "ico", style: { background: cat.color || COLORS[5] } }, cat.icon || icon("list")),
+    h("span", { class: "ico", style: { "--c": cat.color || COLORS[5] } }, cat.icon || icon("list")),
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("h1", null, "ORGANIZE"), h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"))),
+      h("div", { class: "side-head" }, h("div", { class: "brand" }, h("img", { src: "/icon-192.png", alt: "" }), "ORGANIZE"), h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"))),
       h("label", { class: "search" }, icon("search"), h("input", { type: "search", placeholder: "Cerca", value: searchQ, oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); } })),
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
@@ -243,13 +251,14 @@ function itemList(list, opts = {}) {
 function itemNode(it, opts) {
   const color = colorOf(it.id);
   const ch = kids(it.id), chVis = ch.filter(visible);
-  const li = h("li", { "data-id": it.id, class: it.done ? "done" : "", style: { "--c": color } });
+  const li = h("li", { "data-id": it.id, class: (it.done ? "done" : "") + (it.done && recentDone.has(it.id) ? " just" : ""), style: { "--c": color } });
   const t = today();
   const meta = [];
   if (it.due_date) {
     const late = !it.done && it.due_date < t, isT = it.due_date === t;
     meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time : "")));
   }
+  if (it.priority) meta.push(h("span", { class: "prio p" + it.priority }, PRIO[it.priority]));
   if (it.repeat) meta.push(h("span", null, icon("repeat")));
   if (it.remind && it.remind !== "none" && it.due_date) meta.push(h("span", null, icon("bell")));
   if (it.notes) meta.push(h("span", { class: "notes" }, icon("note"), " ", it.notes.split("\n")[0].slice(0, 60)));
@@ -337,13 +346,18 @@ function addRow(parent, ph, extra) {
 }
 
 // ---------- views ----------
+const panel = (list, color) => h("div", { class: "panel", style: color ? { "--c": color } : null }, list);
+const greeting = () => { const hr = new Date().getHours(); return hr < 5 ? "Buonanotte" : hr < 13 ? "Buongiorno" : hr < 18 ? "Buon pomeriggio" : "Buonasera"; };
+const byDue = (a, b) => (a.due_date + (a.due_time || "99")).localeCompare(b.due_date + (b.due_time || "99")) || (b.priority || 0) - (a.priority || 0);
 function renderCat(inner, top) {
-  const cat = items[route.id];
+  const cat = items[route.id]; const col = cat.color || COLORS[5];
   top.append(h("button", { class: "icon-btn", title: "Opzioni", onclick: () => catMenu(cat.id) }, icon("more")));
-  inner.append(h("div", { class: "big-title", style: { color: cat.color || COLORS[5] } }, cat.icon ? h("span", { class: "ico" }, cat.icon) : null, cat.text));
+  inner.append(h("div", { class: "page-ico", style: { "--c": col } }, cat.icon || "•"), h("div", { class: "big-title" }, cat.text));
+  const n = openCount(cat.id);
+  inner.append(h("p", { class: "page-sub" }, n ? n + (n === 1 ? " promemoria da fare" : " promemoria da fare") : "Niente da fare qui"));
   const list = itemList(kids(cat.id), {});
   list.append(addRow(cat.id, "Nuovo promemoria"));
-  inner.append(h("div", { style: { "--c": cat.color || COLORS[5] } }, list));
+  inner.append(panel(list, col));
   if (!kids(cat.id).length) inner.append(h("div", { class: "empty" }, "Scrivi qui sopra e premi Invio.", h("br"), "Con ", h("b", null, "+"), " aggiungi sotto-voci, con ", h("b", null, "ⓘ"), " scadenze e avvisi."));
 }
 function ensureInbox() {
@@ -353,52 +367,67 @@ function ensureInbox() {
   const c = mkItem("", "Promemoria", { color: COLORS[5], icon: "📋" }); return c.id;
 }
 function renderToday(inner) {
-  inner.append(h("div", { class: "big-title", style: { color: "var(--blue)" } }, "Oggi"));
-  const t = today();
-  const all = Object.values(items).filter(x => x.parent && x.due_date && x.due_date <= t && visible(x)).sort((a, b) => (a.due_date + (a.due_time || "99")).localeCompare(b.due_date + (b.due_time || "99")));
-  const late = all.filter(x => x.due_date < t), tod = all.filter(x => x.due_date === t);
-  if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(itemList(late, { flat: true, path: true })); }
-  if (late.length) inner.append(h("div", { class: "group-h" }, "Oggi"));
+  const t = today(), d = new Date();
+  const open = Object.values(items).filter(x => x.parent && x.due_date && visible(x));
+  const late = open.filter(x => x.due_date < t && !x.done).sort(byDue), tod = open.filter(x => x.due_date === t).sort(byDue);
+  const soon = open.filter(x => x.due_date > t && x.due_date <= addDays(t, 7)).sort(byDue);
+  const n = late.length + tod.filter(x => !x.done).length;
+  inner.append(h("div", { class: "hero" },
+    h("div", { class: "date" }, GIORNI[d.getDay()] + " " + d.getDate() + " " + MESI[d.getMonth()]),
+    h("div", { class: "big-title" }, greeting()),
+    h("div", { class: "sub" }, n ? `Hai ${n} ${n === 1 ? "promemoria" : "promemoria"} in scadenza` + (late.length ? `, di cui ${late.length} ${late.length === 1 ? "scaduto" : "scaduti"}.` : " oggi.") : "Niente in scadenza oggi. Goditi la giornata.")));
+  if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti ", h("small", null, late.length))); inner.append(panel(itemList(late, { flat: true, path: true }))); }
+  inner.append(h("div", { class: "group-h" }, "Oggi ", tod.length ? h("small", null, tod.length) : null));
   const l = itemList(tod, { flat: true, path: true });
   l.append(addRow("today", "Nuovo promemoria per oggi", () => ({ parent: ensureInbox(), extra: { due_date: today(), remind: "morning" } })));
-  inner.append(l);
-  if (!all.length) inner.append(h("div", { class: "empty" }, "Niente in scadenza oggi. 🎉"));
+  inner.append(panel(l));
+  if (soon.length) { inner.append(h("div", { class: "group-h" }, "Prossimi 7 giorni ", h("small", null, soon.length))); inner.append(panel(itemList(soon, { flat: true, path: true }))); }
+  if (cats().length) {
+    inner.append(h("div", { class: "group-h" }, "Le tue categorie"));
+    inner.append(h("div", { class: "cat-cards" }, cats().map(cat => {
+      const all = desc(cat.id), doneN = all.filter(k => items[k].done).length, openN = all.length - doneN;
+      return h("button", { class: "cat-card", style: { "--c": cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) },
+        h("span", { class: "ico" }, cat.icon || "•"), h("span", { class: "nm" }, cat.text),
+        h("span", { class: "ct" }, openN ? openN + " da fare" : "Tutto fatto"),
+        h("span", { class: "bar" }, h("i", { style: { width: (all.length ? Math.round(doneN / all.length * 100) : 0) + "%" } })));
+    })));
+  }
 }
 function renderScheduled(inner) {
-  inner.append(h("div", { class: "big-title", style: { color: "var(--red)" } }, "Programmati"));
-  const all = Object.values(items).filter(x => x.parent && x.due_date && visible(x)).sort((a, b) => (a.due_date + (a.due_time || "99")).localeCompare(b.due_date + (b.due_time || "99")));
+  inner.append(h("div", { class: "big-title" }, "Programmati"), h("p", { class: "page-sub" }, "Tutto quello che ha una scadenza, giorno per giorno"));
+  const all = Object.values(items).filter(x => x.parent && x.due_date && visible(x)).sort(byDue);
   const t = today(); const byDay = new Map();
   for (const it of all) { const k = it.due_date < t && !it.done ? "late" : it.due_date; if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(it); }
-  if (byDay.has("late")) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(itemList(byDay.get("late"), { flat: true, path: true })); byDay.delete("late"); }
+  if (byDay.has("late")) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(byDay.get("late"), { flat: true, path: true }))); byDay.delete("late"); }
   for (const [d, list] of byDay) {
     const lab = dayLabel(d, true);
     inner.append(h("div", { class: "group-h" }, lab.charAt(0).toUpperCase() + lab.slice(1)));
-    inner.append(itemList(list, { flat: true, path: true }));
+    inner.append(panel(itemList(list, { flat: true, path: true })));
   }
   if (!all.length) inner.append(h("div", { class: "empty" }, "Nessuna scadenza programmata.", h("br"), "Tocca ", h("b", null, "ⓘ"), " su una voce per darle una data."));
 }
 function renderAll(inner) {
-  inner.append(h("div", { class: "big-title" }, "Tutti"));
+  inner.append(h("div", { class: "big-title" }, "Tutti"), h("p", { class: "page-sub" }, "Tutti i promemoria, per categoria"));
   for (const cat of cats()) {
-    inner.append(h("button", { class: "group-h", style: { color: cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) }, cat.icon || "", " ", cat.text));
+    inner.append(h("button", { class: "group-h", onclick: () => go("c-" + cat.id) }, (cat.icon || "") + " " + cat.text, " ", h("small", null, openCount(cat.id) || "")));
     const l = itemList(kids(cat.id), {}); l.append(addRow(cat.id, "Nuovo promemoria"));
-    inner.append(h("div", { style: { "--c": cat.color || COLORS[5] } }, l));
+    inner.append(panel(l, cat.color || COLORS[5]));
   }
   if (!cats().length) inner.append(h("div", { class: "empty" }, "Crea la tua prima categoria con ", h("b", null, "+ Nuova categoria"), "."));
 }
 function renderDoneView(inner) {
-  inner.append(h("div", { class: "big-title", style: { color: "#8e8e93" } }, "Completati"));
+  inner.append(h("div", { class: "big-title" }, "Completati"));
   const list = Object.values(items).filter(x => x.parent && x.done);
   if (!list.length) { inner.append(h("div", { class: "empty" }, "Ancora niente di completato.")); return; }
   inner.append(h("button", { class: "subtle-btn", onclick: () => confirmSheet("Eliminare tutti i " + list.length + " completati?", "Elimina", () => { list.forEach(x => items[x.id] && removeItem(x.id)); commit(); }) }, "Elimina tutti i completati"));
-  const ul = h("ul", { class: "items" }); list.forEach(it => ul.append(itemNode(it, { flat: true, path: true }))); inner.append(ul);
+  const ul = h("ul", { class: "items" }); list.forEach(it => ul.append(itemNode(it, { flat: true, path: true }))); inner.append(panel(ul));
 }
 function renderSearch(inner) {
   const q = searchQ.toLowerCase();
   inner.append(h("div", { class: "big-title" }, "Risultati"));
   const list = Object.values(items).filter(x => x.parent && ((x.text || "").toLowerCase().includes(q) || (x.notes || "").toLowerCase().includes(q)));
   if (!list.length) inner.append(h("div", { class: "empty" }, "Nessun risultato per “" + searchQ + "”"));
-  const ul = h("ul", { class: "items" }); list.forEach(it => ul.append(itemNode(it, { flat: true, path: true }))); inner.append(ul);
+  const ul = h("ul", { class: "items" }); list.forEach(it => ul.append(itemNode(it, { flat: true, path: true }))); if (list.length) inner.append(panel(ul));
 }
 
 // ================= sheets =================
@@ -431,12 +460,15 @@ function openItem(id) {
         d.due_date ? h("div", { class: "chips" }, [["Oggi", 0], ["Domani", 1], ["Tra 1 settimana", 7]].map(([l, n]) => h("button", { class: "chip", onclick: () => { d.due_date = addDays(today(), n); draw(); } }, l))) : null,
         d.due_date ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Ora"), sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null,
         d.due_date && d.due_time ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_time, onchange: e => { if (e.target.value) d.due_time = e.target.value; } })) : null),
+      h("div", { class: "form-group" },
+        field(fi("flag", "#e5484d"), h("span", { class: "lab" }, "Priorità"), h("div", { class: "seg" }, [["Nessuna", 0], ["Bassa", 1], ["Media", 2], ["Alta", 3]].map(([l, v]) => h("button", { class: (d.priority || 0) === v ? "on" : "", onclick: () => { d.priority = v; draw(); } }, l))))),
       d.due_date ? h("div", { class: "form-group" },
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),
         field(fi("repeat", "#8e8e93"), h("span", { class: "lab" }, "Ripeti"), select(REPEAT, d.repeat || "", v => d.repeat = v || null))) : null,
       d.due_date ? h("div", { class: "form-note" }, "L'avviso arriva sui dispositivi dove hai attivato le notifiche (Impostazioni ⚙︎).") : null,
       h("div", { class: "form-group" },
         h("button", { class: "field btn", onclick: () => { save(); pickParent(id); } }, h("span", { class: "lab" }, "Sposta in…"), h("span", { style: { color: "var(--label2)", fontSize: "15px" } }, pathOf(id))),
+        h("button", { class: "field btn", onclick: () => { save(); closeSheet(); duplicate(id); } }, "Duplica"),
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); addingUnder = id; it.collapsed = false; if (route.v !== "cat" || catOf(id).id !== route.id) go("c-" + catOf(id).id); focusReq = { id, sel: "add" }; render(); } }, "Aggiungi sotto-voce")),
       h("div", { class: "form-group" },
         h("button", { class: "field btn danger", onclick: () => { const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); } }, "Elimina")));
@@ -444,6 +476,12 @@ function openItem(id) {
   const save = () => { Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_date) { it.due_time = null; it.remind = null; it.repeat = null; } commit(); };
   draw();
   openSheet(head("Dettagli", btn("Annulla", closeSheet), btn("Fine", () => { save(); closeSheet(); }, "r")), body);
+}
+function duplicate(id) {
+  const src = items[id]; const sib = kids(src.parent); const i = sib.findIndex(x => x.id === id);
+  const ord = i < sib.length - 1 ? (src.ord + sib[i + 1].ord) / 2 : src.ord + 1;
+  const cp = (sid, parent, top) => { const s = items[sid]; const n = { ...s, id: uid(), parent, done: false }; if (top) { n.ord = ord; n.text = s.text + " (copia)"; } items[n.id] = n; kids(sid).forEach(k => cp(k.id, n.id)); return n; };
+  const n = cp(id, src.parent, true); commit(); toast("Duplicato"); return n;
 }
 function pickParent(id) {
   const it = items[id]; const banned = new Set(desc(id).concat(id));
@@ -523,6 +561,8 @@ async function openSettings() {
   }
   const calCode = h("code", null, s.calendarUrl);
   body.replaceChildren(
+    h("div", { class: "form-group-title" }, "Aspetto"),
+    h("div", { class: "form-group" }, field(h("span", { class: "lab" }, "Tema"), h("div", { class: "seg" }, [["Auto", "auto"], ["Chiaro", "light"], ["Scuro", "dark"]].map(([l, v]) => h("button", { class: lsGet("theme", "auto") === v ? "on" : "", onclick: e => { lsSet("theme", v); applyTheme(); e.target.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === e.target)); } }, l))))),
     h("div", { class: "form-group-title" }, "Avvisi"), pushGroup, status,
     h("div", { class: "form-group-title" }, "Calendario"),
     h("div", { class: "form-group" }, h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
@@ -589,6 +629,7 @@ if ("serviceWorker" in navigator) {
 let lastMobile = isMobile();
 window.addEventListener("resize", () => { const m = isMobile(); if (m !== lastMobile) { lastMobile = m; route = parseHash(); render(); } });
 
+applyTheme();
 (async () => {
   try {
     const st = await api("/api/status");
