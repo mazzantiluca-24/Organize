@@ -438,7 +438,15 @@ function dayParts(d, dated, s0, e0) {
     const m = Math.max(0, Math.min(23 * 60 + 45, Math.round(((y / ROW + s0) * 60) / 15) * 15));
     moveItem(e.dataTransfer.getData("text/plain"), d, hhmm(m));
   });
-  return { head, allday, col, count: list.filter(x => !x.done).length, total: list.length };
+  const cell = time => {
+    const its = list.filter(x => x.due_time === time);
+    const c = h("div", { class: "wk-cell" + cls }, its.map(it => { const b = h("button", { class: "wk-chip" + (it.done ? " done" : ""), style: { "--c": colorOfIt(it) }, draggable: "true", "data-id": it.id, title: it.text, onclick: () => openItem(it.id) }, h("span", { class: "wk-ic" }, iconOfIt(it)), h("span", { class: "wk-tx" }, it.text)); dnd(b); return b; }));
+    c.addEventListener("dragover", e => { e.preventDefault(); c.classList.add("drop"); });
+    c.addEventListener("dragleave", () => c.classList.remove("drop"));
+    c.addEventListener("drop", e => { e.preventDefault(); c.classList.remove("drop"); moveItem(e.dataTransfer.getData("text/plain"), d, time); });
+    return c;
+  };
+  return { head, allday, col, cell, count: list.filter(x => !x.done).length, total: list.length };
 }
 function axis(s0, e0) {
   const a = h("div", { class: "tl-axis", style: { height: (e0 - s0) * ROW + "px" } });
@@ -453,8 +461,10 @@ function weekBoard(dated) {
   const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
   const [s0, e0] = hourRange(inWeek);
   const parts = days.map(d => dayParts(d, dated, s0, e0));
+  const times = [...new Set(inWeek.filter(x => x.due_time).map(x => x.due_time))].sort();
   const desk = h("div", { class: "wk-desk" },
-    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
+    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday),
+    times.map(tm => [h("span", { class: "wk-time" }, tm), parts.map(p => p.cell(tm))]));
   // iPhone: week strip with counts + the selected day with its hours
   const dayList = dated.filter(x => x.due_date === selDay);
   const timed = dayList.filter(x => x.due_time).map(x => +x.due_time.slice(0, 2));
