@@ -481,8 +481,8 @@ function weekBoard(dated) {
   const days = [...Array(7)].map((_, i) => addDays(wkStart, i));
   const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
   const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
-  // titolo lungo per Mac: "Domenica 1 a Sabato 7 NOVEMBRE" (se la settimana cambia mese: "Giovedì 29 OTTOBRE a Mercoledì 4 NOVEMBRE")
-  const longLabel = `${cap(GIORNI[a.getDay()])} ${a.getDate()}${a.getMonth() === z.getMonth() ? "" : " " + MESI[a.getMonth()].toUpperCase()} a ${cap(GIORNI[z.getDay()])} ${z.getDate()} ${MESI[z.getMonth()].toUpperCase()}`;
+  // titolo lungo per Mac: "da Domenica 1 a Sabato 7 - Novembre" (se la settimana cambia mese: "da Giovedì 29 - Ottobre a Mercoledì 4 - Novembre")
+  const longLabel = `da ${cap(GIORNI[a.getDay()])} ${a.getDate()}${a.getMonth() === z.getMonth() ? "" : " - " + cap(MESI[a.getMonth()])} a ${cap(GIORNI[z.getDay()])} ${z.getDate()} - ${cap(MESI[z.getMonth()])}`;
   const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
   const [s0, e0] = hourRange(inWeek);
   const parts = days.map((d, i) => dayParts(d, dated, s0, e0, i));

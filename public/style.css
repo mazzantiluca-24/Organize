@@ -324,10 +324,11 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 .wk-title .t-long{display:none}
 /* Mac: niente saluto; titolo + frecce all'altezza del logo, colonne all'altezza delle pillole */
 @media (min-width:800px){
-  .main-inner.wide{padding-top:calc(18px + var(--safeT))}
+  .main-inner.wide{padding-top:calc(66px + var(--safeT))} /* 66px = dove iniziano le pillole nella barra laterale */
   .main-inner.wide .topbar,.main-inner.wide .hero{display:none}
   .main-inner.wide .wk{background:none;box-shadow:none;padding:0;border-radius:0}
-  .wk-head{height:34px;margin:0 2px 14px}
+  .wk-head{height:51px;margin:0 2px} /* 51px = altezza delle pillole: il titolo sta alla loro altezza, i giorni partono dal loro bordo basso */
+  .wk-title{font-size:16px;font-weight:400;letter-spacing:0}
   .wk-title .t-long{display:inline}.wk-title .t-short{display:none}
 }
 @media (max-width:799px){
