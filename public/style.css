@@ -302,9 +302,11 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
   .wk-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px}
   .wk-sd{display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 0 8px;border-radius:13px}
   .wk-sd.sel{background:color-mix(in srgb,var(--blue) 12%,transparent)}
-  .wk-cnt{min-width:20px;height:20px;border-radius:10px;font-size:12px;font-weight:750;background:var(--fill);color:var(--label2);display:grid;place-items:center;padding:0 5px}
-  .wk-sd.empty .wk-cnt{visibility:hidden}
-  .wk-sd.today .wk-cnt{background:var(--blue);color:#fff}
+  .wk-bar{width:22px;height:5px;border-radius:3px;background:color-mix(in srgb,var(--blue) 22%,var(--fill));overflow:hidden;display:block}
+  .wk-bar i{display:block;height:100%;background:var(--blue);border-radius:3px;transition:width .3s}
+  .wk-sd.full .wk-bar{background:color-mix(in srgb,var(--green) 25%,var(--fill))}
+  .wk-sd.full .wk-bar i{background:var(--green)}
+  .wk-sd.empty .wk-bar{visibility:hidden}
   .wk-mday .wk-allday{background:none;border:0;padding:0 0 8px 44px;min-height:0}
   .wk-mday .wk-allday:empty{display:none}
   .wk-mday .tl-wrap{display:grid;grid-template-columns:40px 1fr;column-gap:4px}

@@ -438,7 +438,7 @@ function dayParts(d, dated, s0, e0) {
     const m = Math.max(0, Math.min(23 * 60 + 45, Math.round(((y / ROW + s0) * 60) / 15) * 15));
     moveItem(e.dataTransfer.getData("text/plain"), d, hhmm(m));
   });
-  return { head, allday, col, count: list.filter(x => !x.done).length };
+  return { head, allday, col, count: list.filter(x => !x.done).length, total: list.length };
 }
 function axis(s0, e0) {
   const a = h("div", { class: "tl-axis", style: { height: (e0 - s0) * ROW + "px" } });
@@ -464,9 +464,10 @@ function weekBoard(dated) {
   const me = timed.length ? Math.min(24, Math.max(Math.max(...timed) + 2, ms + 5)) : 9;
   const sp = dayParts(selDay, dated, ms, me);
   const strip = h("div", { class: "wk-strip" }, days.map((d, i) => {
-    const n = parts[i].count;
-    return h("button", { class: "wk-sd" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (n ? "" : " empty"), onclick: () => { selDay = d; render(); } },
-      h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8))), h("span", { class: "wk-cnt" }, n || ""));
+    const { count, total } = parts[i], doneN = total - count;
+    return h("button", { class: "wk-sd" + (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (total ? "" : " empty") + (total && !count ? " full" : ""), onclick: () => { selDay = d; render(); } },
+      h("span", { class: "wk-dow" }, DOW[(new Date(d + "T12:00").getDay() + 6) % 7]), h("span", { class: "wk-num" }, String(+d.slice(8))),
+      h("span", { class: "wk-bar" }, h("i", { style: { width: (total ? Math.round(doneN / total * 100) : 0) + "%" } })));
   }));
   const mob = h("div", { class: "wk-mob" }, strip, h("div", { class: "wk-mday" }, sp.allday, timed.length ? h("div", { class: "tl-wrap" }, axis(ms, me), sp.col) : null));
   return h("div", { class: "wk", style: { "--row": ROW + "px" } },
