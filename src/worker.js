@@ -172,7 +172,7 @@ async function calendar(env) {
   const all = (await env.DB.prepare("SELECT id, parent, text FROM items").all()).results;
   const byId = Object.fromEntries(all.map(r => [r.id, r]));
   const path = id => { const p = []; let c = byId[id]?.parent; for (let i = 0; c && byId[c] && i < 20; i++) { p.unshift(byId[c].text); c = byId[c].parent; } return p.join(" › "); };
-  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Organize//IT", "CALSCALE:GREGORIAN", "X-WR-CALNAME:ORGANIZE", "X-PUBLISHED-TTL:PT15M", "REFRESH-INTERVAL;VALUE=DURATION:PT15M"];
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Organize//IT", "CALSCALE:GREGORIAN", "X-WR-CALNAME:Organize", "X-PUBLISHED-TTL:PT15M", "REFRESH-INTERVAL;VALUE=DURATION:PT15M"];
   for (const r of rows) {
     L.push("BEGIN:VEVENT", "UID:" + r.id + "@organize", "DTSTAMP:" + icsUtc(Date.parse(r.updated_at) || Date.now()));
     if (r.due_time) {
@@ -237,7 +237,7 @@ async function api(req, env, url) {
     return json({ ok: true });
   }
   if (p === "/api/push/test" && m === "POST") {
-    return json(await pushAll(env, url.origin, { title: "ORGANIZE", body: "Gli avvisi funzionano 👍", tag: "test", url: "/" }));
+    return json(await pushAll(env, url.origin, { title: "Organize", body: "Gli avvisi funzionano 👍", tag: "test", url: "/" }));
   }
   if (p === "/api/password" && m === "POST") {
     if (!body.password || body.password.length < 6) return json({ error: "La password deve avere almeno 6 caratteri" }, 400);

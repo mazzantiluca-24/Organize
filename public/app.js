@@ -36,6 +36,8 @@ const I = {
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+  expand: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
+  shrink: '<path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
 };
 const icon = n => svg(I[n]);
@@ -58,6 +60,16 @@ function dayLabel(s, long) {
 const REMIND = { none: "Nessuno", morning: "Il giorno stesso alle 9", at: "All'ora della scadenza", "15m": "15 minuti prima", "1h": "1 ora prima", "1d": "Il giorno prima" };
 const PRIO = ["", "Bassa", "Media", "Alta"];
 const REPEAT = { "": "Mai", daily: "Ogni giorno", weekly: "Ogni settimana", monthly: "Ogni mese", yearly: "Ogni anno" };
+const FS_EL = document.documentElement;
+const FS_OK = !!(FS_EL.requestFullscreen || FS_EL.webkitRequestFullscreen) && !/iPhone|iPad|iPod/.test(navigator.userAgent);
+const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+function toggleFs() {
+  try {
+    if (isFs()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else (FS_EL.requestFullscreen || FS_EL.webkitRequestFullscreen).call(FS_EL);
+  } catch (_) {}
+}
+["fullscreenchange", "webkitfullscreenchange"].forEach(ev => document.addEventListener(ev, () => { const b = $(".fs-btn"); if (b) { b.title = isFs() ? "Esci da schermo intero" : "Schermo intero"; b.replaceChildren(icon(isFs() ? "shrink" : "expand")); } }));
 function applyTheme() {
   const t = lsGet("theme", "auto"), root = document.documentElement;
   if (t === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", t);
@@ -214,7 +226,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("div", { class: "brand" }, h("img", { src: "/icon-192.png", alt: "" }), "ORGANIZE"), h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"))),
+      h("div", { class: "side-head" }, h("div", { class: "brand" }, h("img", { src: "/logo-tile.png", alt: "" }), "Organize"), h("span", { class: "head-btns" }, FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" }, icon("search"), h("input", { type: "search", placeholder: "Cerca", value: searchQ, oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); } })),
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
@@ -564,6 +576,8 @@ async function openSettings() {
     h("div", { class: "form-group-title" }, "Aspetto"),
     h("div", { class: "form-group" }, field(h("span", { class: "lab" }, "Tema"), h("div", { class: "seg" }, [["Auto", "auto"], ["Chiaro", "light"], ["Scuro", "dark"]].map(([l, v]) => h("button", { class: lsGet("theme", "auto") === v ? "on" : "", onclick: e => { lsSet("theme", v); applyTheme(); e.target.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === e.target)); } }, l))))),
     h("div", { class: "form-group-title" }, "Avvisi"), pushGroup, status,
+    h("div", { class: "form-group-title" }, "App su Mac"),
+    h("div", { class: "form-note", style: { margin: "0 0 20px" } }, "Per averla come un'app a sé, a schermo intero e con la sua icona: in Safari scegli ", h("b", null, "File › Aggiungi al Dock"), ". Nel menu di Chrome: ", h("b", null, "Salva e condividi › Installa Organize"), "."),
     h("div", { class: "form-group-title" }, "Calendario"),
     h("div", { class: "form-group" }, h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
     h("div", { class: "form-note" }, h("b", null, "iPhone/Mac: "), "Impostazioni › Calendario › Account › Aggiungi account › Altro › Aggiungi calendario sottoscritto, e incolla l'indirizzo. ", h("br"), h("b", null, "Google Calendar: "), "dal computer, calendar.google.com › Altri calendari › + › Da URL. Google aggiorna questi calendari solo ogni qualche ora."),
@@ -606,9 +620,9 @@ function showAuth(setup) {
     } catch (x) { err.textContent = x.message; }
   };
   $("#app").replaceChildren(h("div", { class: "auth" }, h("form", { class: "auth-card", onsubmit: submit },
-    h("img", { src: "/apple-touch-icon.png", alt: "" }),
-    h("h1", null, setup ? "Benvenuto in ORGANIZE" : "ORGANIZE"),
-    h("p", null, setup ? "Scegli la password per entrare. Ti servirà su ogni dispositivo." : "Inserisci la password per continuare."),
+    h("img", { class: "auth-tile", src: "/logo-tile.png", alt: "" }),
+    h("img", { class: "auth-word", src: "/logo-wordmark.png", alt: "Organize" }),
+    h("p", null, setup ? "Benvenuto! Scegli la password per entrare. Ti servirà su ogni dispositivo." : "Inserisci la password per continuare."),
     pw, h("button", { type: "submit" }, setup ? "Inizia" : "Entra"), err)));
   setTimeout(() => pw.focus(), 50);
 }
@@ -635,7 +649,7 @@ applyTheme();
     const st = await api("/api/status");
     if (st.setup) showAuth(true); else if (!st.authed) showAuth(false); else start();
   } catch (_) {
-    if (Object.keys(lsGet("items", {})).length) start(); else $("#app").replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" }, h("h1", null, "ORGANIZE"), h("p", null, "Sei offline. Riprova quando hai connessione."))));
+    if (Object.keys(lsGet("items", {})).length) start(); else $("#app").replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" }, h("h1", null, "Organize"), h("p", null, "Sei offline. Riprova quando hai connessione."))));
   }
 })();
 })();
