@@ -184,7 +184,7 @@ function parseHash() {
   if (h === "today" || h === "scheduled" || h === "all" || h === "done") return { v: h };
   if (h.startsWith("c-") && items[h.slice(2)]) return { v: "cat", id: h.slice(2) };
   if (h.startsWith("i-") && items[h.slice(2)]) { const c = catOf(h.slice(2)); return { v: "cat", id: c.id, hl: h.slice(2) }; }
-  return { v: isMobile() ? "home" : "today" };
+  return { v: "today" };
 }
 function go(h) { if (location.hash === "#" + h) { route = parseHash(); render(); } else location.hash = h; }
 window.addEventListener("hashchange", () => { route = parseHash(); searchQ = ""; searchOpen = false; addingUnder = null; render(); const m = $(".main"); if (m) m.scrollTop = 0; });
@@ -192,7 +192,7 @@ window.addEventListener("hashchange", () => { route = parseHash(); searchQ = "";
 // ================= render =================
 function render() {
   const app = $("#app");
-  const inList = route.v !== "home" || !!searchQ;
+  const inList = true;
   const side = renderSide(), main = renderMain();
   const prevSide = $(".side-scroll"), keep = prevSide ? prevSide.scrollTop : 0;
   const prevMain = $(".main"), keepM = prevMain ? prevMain.scrollTop : 0;
@@ -251,7 +251,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go(isMobile() ? "home" : "today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -273,7 +273,8 @@ function renderMainOnly() { const m = $(".main"); if (m) m.replaceWith(renderMai
 
 function renderMain() {
   const inner = h("div", { class: "main-inner" + (route.v === "today" && !searchQ ? " wide" : "") });
-  const top = h("div", { class: "topbar" }, h("button", { class: "back", onclick: () => { searchQ = ""; go("home"); } }, icon("back"), "Organize"));
+  if (isMobile()) return renderMainMobile(inner);
+  const top = h("div", { class: "topbar" }, h("button", { class: "back", onclick: () => { searchQ = ""; go("today"); } }, icon("back"), "Organize"));
   inner.append(top);
   if (searchQ) { renderSearch(inner); return h("main", { class: "main" }, inner); }
   const v = route.v;
@@ -282,6 +283,39 @@ function renderMain() {
   else if (v === "scheduled") renderScheduled(inner);
   else if (v === "all") renderAll(inner);
   else if (v === "done") renderDoneView(inner);
+  return h("main", { class: "main" }, inner);
+}
+
+// iPhone: stessa impostazione del Mac. In alto logo (o indietro) + cerca + ingranaggio, sotto la pagina, in fondo le tre pillole
+function renderMainMobile(inner) {
+  const home = route.v === "today";
+  const searching = searchOpen || !!searchQ;
+  const c = counts();
+  const gear = h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"));
+  let top;
+  if (searching) {
+    const res = h("div", { class: "m-results" });
+    const draw = () => { res.replaceChildren(); if (searchQ.trim()) renderSearch(res); };
+    const inp = h("input", { type: "search", placeholder: "Cerca", value: searchQ, autofocus: "", oninput: e => { searchQ = e.target.value; draw(); } });
+    top = h("div", { class: "topbar m-search-bar" }, h("label", { class: "m-search" }, icon("search"), inp),
+      h("button", { class: "m-cancel", onclick: () => { searchQ = ""; searchOpen = false; render(); } }, "Annulla"));
+    inner.append(top, res); draw();
+    setTimeout(() => inp.focus(), 30);
+    return h("main", { class: "main" }, inner);
+  }
+  const left = home
+    ? h("button", { class: "brand", title: "Pagina principale", onclick: () => { selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))
+    : h("button", { class: "back", onclick: () => go("today") }, icon("back"), "Organize");
+  top = h("div", { class: "topbar" }, left, h("span", { class: "head-btns" }, h("button", { class: "icon-btn", title: "Cerca", onclick: () => { searchOpen = true; render(); } }, icon("search")), gear));
+  inner.append(top);
+  const v = route.v;
+  if (v === "cat") renderCat(inner, top);
+  else if (v === "today") renderToday(inner);
+  else if (v === "scheduled") renderScheduled(inner);
+  else if (v === "all") renderAll(inner);
+  else if (v === "done") renderDoneView(inner);
+  const pill = (view, label, n) => h("button", { class: "sp mb" + (route.v === view ? " on" : ""), onclick: () => go(view) }, h("b", null, n || 0), h("span", null, label));
+  inner.append(h("div", { class: "mob-bar" }, pill("scheduled", "programmati", c.sc), pill("all", "tutti", c.all), pill("done", "completati", c.dn)));
   return h("main", { class: "main" }, inner);
 }
 
@@ -494,15 +528,16 @@ function axis(s0, e0) {
 }
 function weekBoard(dated) {
   const t = today(); if (!selDay) selDay = t; if (!wkStart) wkStart = t;
-  const days = [...Array(7)].map((_, i) => addDays(wkStart, i));
-  const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
+  const N = isMobile() ? 3 : 7;
+  const days = [...Array(N)].map((_, i) => addDays(wkStart, i));
+  const a = new Date(days[0] + "T12:00"), z = new Date(days[N - 1] + "T12:00");
   const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
   // titolo lungo per Mac: "da Domenica 1 a Sabato 7 - Novembre" (se la settimana cambia mese: "da Giovedì 29 - Ottobre a Mercoledì 4 - Novembre")
   const longLabel = `da ${cap(GIORNI[a.getDay()])} ${a.getDate()}${a.getMonth() === z.getMonth() ? "" : " - " + cap(MESI[a.getMonth()])} a ${cap(GIORNI[z.getDay()])} ${z.getDate()} - ${cap(MESI[z.getMonth()])}`;
-  const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
+  const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[N - 1]);
   const [s0, e0] = hourRange(inWeek);
   const parts = days.map((d, i) => dayParts(d, dated, s0, e0, i));
-  const desk = h("div", { class: "wk-desk" },
+  const desk = h("div", { class: "wk-desk", style: { "--n": N } },
     h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
   // iPhone: week strip with counts + the selected day with its hours
   const dayList = dated.filter(x => x.due_date === selDay);
@@ -523,8 +558,8 @@ function weekBoard(dated) {
     h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, h("span", { class: "t-long" }, longLabel), h("span", { class: "t-short" }, label)),
       h("div", { class: "wk-nav" },
         (wkStart !== t || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = t; render(); } }, "Oggi") : null,
-        h("button", { class: "icon-btn", title: "Settimana prima", onclick: () => { wkStart = addDays(wkStart, -7); selDay = wkStart; render(); } }, icon("back")),
-        h("button", { class: "icon-btn", title: "Settimana dopo", onclick: () => { wkStart = addDays(wkStart, 7); selDay = wkStart; render(); } }, icon("chev")))),
+        h("button", { class: "icon-btn", title: "Indietro", onclick: () => { wkStart = addDays(wkStart, -N); selDay = wkStart; render(); } }, icon("back")),
+        h("button", { class: "icon-btn", title: "Avanti", onclick: () => { wkStart = addDays(wkStart, N); selDay = wkStart; render(); } }, icon("chev")))),
     desk, mob);
 }
 function renderToday(inner) {
@@ -540,13 +575,12 @@ function renderToday(inner) {
       h("span", { class: "pill green" + (todayDone ? "" : " zero") }, h("b", null, todayDone), todayDone === 1 ? "fatta" : "fatte"),
       h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
   const addNode = addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } }));
-  if (!isMobile()) inner.append(h("ul", { class: "add-top" }, addNode));   // Mac: in alto, sopra la settimana
+  inner.append(h("ul", { class: "add-top" }, addNode));   // in alto, sopra la settimana (Mac e iPhone)
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
   const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
   const l = itemList(dayList, { flat: true, path: true });
-  if (isMobile()) l.append(addNode);   // iPhone: resta sotto la lista del giorno
   inner.append(panel(l));
   if (cats().length) {
     inner.append(h("div", { class: "group-h" }, "Categorie"));
@@ -556,7 +590,7 @@ function renderToday(inner) {
         h("span", { class: "ico" }, cat.icon || "•"), h("span", { class: "nm" }, cat.text),
         h("span", { class: "ct" }, openN ? openN + " da fare" : "Tutto fatto"),
         h("span", { class: "bar" }, h("i", { style: { width: (all.length ? Math.round(doneN / all.length * 100) : 0) + "%" } })));
-    })));
+    }), isMobile() ? h("button", { class: "cat-card new", onclick: () => openCategory(null) }, h("span", { class: "ico" }, icon("plus")), h("span", { class: "nm" }, "Nuova categoria")) : null));
   }
 }
 function renderScheduled(inner) {

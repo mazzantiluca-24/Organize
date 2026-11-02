@@ -288,7 +288,7 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 .today .wk-dow{color:var(--blue)}
 .past .wk-dow,.past .wk-num{opacity:.5}
 /* desktop: griglia con scala oraria, colonne alternate */
-.wk-desk{display:grid;grid-template-columns:44px repeat(7,minmax(0,1fr));column-gap:0;position:relative;border:1px solid var(--sep);border-radius:14px;overflow:clip}
+.wk-desk{display:grid;grid-template-columns:44px repeat(var(--n,7),minmax(0,1fr));column-gap:0;position:relative;border:1px solid var(--sep);border-radius:14px;overflow:clip}
 .wk-h,.wk-allday,.tl-col{background-color:var(--bg2)}
 .wk-h.alt,.wk-allday.alt,.tl-col.alt{background-color:color-mix(in srgb,var(--label) 4.5%,var(--bg2))}
 .wk-h.today,.wk-allday.today,.tl-col.today{background-color:color-mix(in srgb,var(--blue) 11%,var(--bg2))}
@@ -339,8 +339,6 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 @media (max-width:799px){
   .wk{padding:12px 10px 14px;border-radius:16px}
   .wk-head{margin:0 6px 8px}
-  .wk-desk{display:none}
-  .wk-mob{display:block}
   .wk-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px}
   .wk-sd{display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 0 8px;border-radius:13px}
   .wk-sd.sel{background:color-mix(in srgb,var(--blue) 12%,transparent)}
@@ -381,3 +379,37 @@ button.brand{cursor:pointer;border-radius:10px}
 .tl-col,.wk-allday{cursor:cell}
 
 .tl-col,.wk-allday{touch-action:manipulation}
+
+/* ---------- iPhone: come il Mac ---------- */
+.wk-mob{display:none!important}
+.add-top{list-style:none;margin:0 2px 14px;padding:0;height:34px}
+.add-top li{height:100%}
+.add-top .add-row{height:34px;padding:0 12px;gap:10px;border-radius:10px;background:var(--fill2);border:1px solid var(--sep)}
+.add-top .add-row:focus-within{border-color:var(--blue);background:var(--bg2)}
+.add-top .add-row input{font-size:16px}
+.mob-bar{display:none}
+.m-search{display:flex;align-items:center;gap:8px;flex:1;background:var(--fill);border-radius:10px;padding:0 10px;height:36px}
+.m-search svg{width:16px;height:16px;color:var(--label2);flex:none}
+.m-search input{flex:1;min-width:0;background:none;border:0;outline:0;font-size:16px}
+.m-cancel{color:var(--blue);font-size:17px;padding:6px 0 6px 12px}
+.m-search-bar{gap:4px}
+.cat-card.new{border:1.5px dashed var(--sep);box-shadow:none;background:none;color:var(--blue)}
+@media (max-width:799px){
+  .hero{display:none}
+  .topbar{min-height:44px;margin-bottom:8px}
+  .topbar .head-btns{display:flex;gap:2px}
+  .topbar .brand{display:flex;align-items:center;gap:8px}
+  .topbar .brand .b-tile{width:34px;height:34px}
+  .topbar .brand .wm{height:24px}
+  .main-inner.wide .wk{background:none;box-shadow:none;padding:0;border-radius:0;margin-bottom:10px}
+  .wk-head{margin:0 2px 8px}
+  .wk-title{font-size:15px;font-weight:500;letter-spacing:0}
+  .wk-desk{grid-template-columns:34px repeat(var(--n,3),minmax(0,1fr))}
+  .wk-today{font-size:12px}
+  .mob-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(10px + var(--safeB));background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--sep);z-index:5}
+  .sp.mb{flex-direction:row;gap:7px;padding:10px 4px;font-size:13px;background:color-mix(in srgb,var(--blue) 12%,transparent)}
+  .sp.mb b{font-size:17px}
+  .tl-ev{font-size:12px;padding:3px 5px}
+  .tl-ev .wk-tm{font-size:10px}
+}
+.m-search-bar{padding-right:2px}.m-cancel{white-space:nowrap}
