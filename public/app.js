@@ -98,8 +98,9 @@ const kids = p => Object.values(items).filter(x => x.parent === p).sort((a, b) =
 const cats = () => kids("");
 const fmtEur = n => "€ " + Number(n || 0).toLocaleString("it-IT", { minimumFractionDigits: Number.isInteger(Math.round(n * 100) / 100) ? 0 : 2, maximumFractionDigits: 2 });
 const hasAmt = it => it.amount !== null && it.amount !== undefined;
-const subTotal = id => desc(id).reduce((a, k) => a + (items[k].amount || 0), 0);   // somma delle sotto-voci
-const fullTotal = id => (items[id].amount || 0) + subTotal(id);
+const spent = it => (it.est ? 0 : it.amount || 0);
+const subTotal = id => desc(id).reduce((a, k) => a + spent(items[k]), 0);   // somma delle sotto-voci
+const fullTotal = id => spent(items[id]) + subTotal(id);
 const desc = id => { const out = []; const w = x => kids(x).forEach(k => { out.push(k.id); w(k.id); }); w(id); return out; };
 const catOf = id => { let c = items[id]; for (let i = 0; c && c.parent && i < 50; i++) c = items[c.parent]; return c; };
 const colorOf = id => (catOf(id) || {}).color || COLORS[5];
@@ -148,7 +149,7 @@ async function pull() {
   const data = await api("/api/items");
   const next = {}; const nextSynced = {};
   for (const r of data.items) {
-    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
+    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), kind: r.kind || null, est: !!r.est, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
   const same = norm(next) === norm(items);
@@ -159,7 +160,7 @@ function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
 
 function mkItem(parent, text, extra) {
-  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, amount: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
+  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, amount: null, kind: null, est: false, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
   items[it.id] = it; return it;
 }
 function removeItem(id) { desc(id).concat(id).forEach(k => delete items[k]); }
@@ -255,7 +256,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Nuova categoria", onclick: () => openCategory(null) }, icon("plus")), h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -272,7 +273,6 @@ function renderSide() {
       h("div", { class: "sec-title" }, "Le mie categorie"),
       catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
     h("div", { class: "side-foot" },
-      h("button", { class: "link-btn", onclick: () => openCategory(null) }, icon("plus"), "Nuova categoria"),
       h("span", { id: "syncDot", class: "sync-dot" + (syncState === "err" ? " err" : "") })));
 }
 function renderMainOnly() { const m = $(".main"); if (m) m.replaceWith(renderMain()); }
@@ -342,8 +342,13 @@ function itemNode(it, opts) {
     const late = !it.done && it.due_date < t, isT = it.due_date === t;
     meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time + (durOf(it) ? "–" + it.due_end : "") : "")));
   }
-  if (hasAmt(it)) meta.push(h("span", { class: "eur" }, it.amount ? fmtEur(it.amount) : "€ da definire"));
-  if (!opts.flat) { const st = subTotal(it.id); if (st > 0) meta.push(h("span", { class: "eur tot" }, "Totale " + fmtEur(fullTotal(it.id)))); }
+  if (it.kind === "list") {
+    const rows = kids(it.id), sp = rows.reduce((a, x) => a + spent(x), 0), pv = rows.reduce((a, x) => a + (x.est ? x.amount || 0 : 0), 0);
+    meta.push(h("span", { class: "eur" }, "Lista · " + rows.length + " voci"));
+    if (sp) meta.push(h("span", { class: "eur tot" }, "Spesa " + fmtEur(sp)));
+    if (pv) meta.push(h("span", { class: "eur prev" }, "Preventivo " + fmtEur(pv)));
+  } else if (hasAmt(it)) meta.push(h("span", { class: it.est ? "eur prev" : "eur" }, (it.est ? "? " : "") + (it.amount ? fmtEur(it.amount) : "€ da definire")));
+  if (!opts.flat && it.kind !== "list") { const st = subTotal(it.id); if (st > 0) meta.push(h("span", { class: "eur tot" }, "Totale " + fmtEur(fullTotal(it.id)))); }
   if (it.priority) meta.push(h("span", { class: "prio p" + it.priority }, PRIO[it.priority]));
   if (it.repeat) meta.push(h("span", null, icon("repeat")));
   if (it.remind && it.remind !== "none" && it.due_date) meta.push(h("span", null, icon("bell")));
@@ -427,7 +432,8 @@ function addRow(parent, ph, extra) {
   });
   inp.addEventListener("blur", () => { if (!inp.value.trim() && addingUnder === parent) setTimeout(() => { if (addingUnder === parent && !document.activeElement.matches("[data-add]")) { addingUnder = null; render(); } }, 150); });
   const ok = h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check"));
-  return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp, ok));
+  return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); if (typeof extra === "function") { const tx = inp.value.trim(); inp.value = ""; openNewReminder(tx); } else inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp,
+    typeof extra === "function" ? h("button", { class: "new-list", type: "button", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); openNewList(); } }, icon("plus"), h("span", null, "Nuova lista")) : null, ok));
 }
 
 // ---------- views ----------
@@ -528,7 +534,7 @@ function dayParts(d, dated, s0, e0, idx) {
   return { head, allday, col, count: list.filter(x => !x.done).length + late.length, total: list.length + late.length };
 }
 function newAt(date, time) {   // doppio clic sulla settimana: scheda per un nuovo promemoria, creato solo con Conferma
-  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, due_end: null, amount: null, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
+  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, due_end: null, amount: null, kind: null, est: false, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
   it.ord = nextOrd(it.parent); openItem(it.id, { draft: it });
 }
 function axis(s0, e0) {
@@ -597,7 +603,7 @@ function renderToday(inner) {
   inner.append(h("ul", { class: "add-top" }, addNode));   // in alto, sopra la settimana (Mac e iPhone)
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
-  const pending = Object.values(items).filter(x => x.parent && !x.due_date && !x.done && hasAmt(x) && visible(x));
+  const pending = Object.values(items).filter(x => x.parent && !x.due_date && !x.done && hasAmt(x) && visible(x) && !(items[x.parent] && items[x.parent].kind === "list"));
   if (pending.length) { inner.append(h("div", { class: "group-h" }, "In sospeso")); inner.append(panel(itemList(pending, { flat: true, path: true }))); }
   const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
@@ -616,12 +622,13 @@ function renderToday(inner) {
 }
 let selMonth = null;
 const thisMonth = () => today().slice(0, 7);
-const monthTotal = m => Object.values(items).reduce((a, x) => a + (x.parent && x.due_date && x.due_date.slice(0, 7) === m && x.amount ? x.amount : 0), 0);
+const monthTotal = m => Object.values(items).reduce((a, x) => a + (x.parent && x.due_date && x.due_date.slice(0, 7) === m ? spent(x) : 0), 0);
 const addMonths = (m, n) => { const d = new Date(m + "-15T12:00"); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 7); };
 function renderSpese(inner) {
   if (!selMonth) selMonth = thisMonth();
   const [yy, mm] = selMonth.split("-").map(Number);
-  const spend = Object.values(items).filter(x => x.parent && x.amount > 0);
+  const spend = Object.values(items).filter(x => x.parent && x.amount > 0 && !x.est);
+  const prev = Object.values(items).filter(x => x.parent && x.amount > 0 && x.est);
   const inMonth = spend.filter(x => x.due_date && x.due_date.slice(0, 7) === selMonth);
   const nodate = spend.filter(x => !x.due_date);
   const total = inMonth.reduce((a, x) => a + x.amount, 0);
@@ -652,7 +659,8 @@ function renderSpese(inner) {
   };
   if (!inMonth.length) inner.append(h("div", { class: "empty" }, "Nessuna spesa con data in questo mese.", h("br"), "Apri una voce (ⓘ), scrivi la ", h("b", null, "Spesa"), " e dai una data."));
   block(inMonth);
-  const open0 = Object.values(items).filter(x => x.parent && x.amount === 0 && !x.done && visible(x));
+  const open0 = Object.values(items).filter(x => x.parent && x.amount === 0 && !x.done && visible(x) && !(items[x.parent] && items[x.parent].kind === "list"));
+  if (prev.length) block(prev, "Preventivi · " + fmtEur(prev.reduce((a, x) => a + x.amount, 0)));
   if (nodate.length) { const tn = nodate.reduce((a, x) => a + x.amount, 0); block(nodate, "Senza data · " + fmtEur(tn)); }
   if (open0.length) inner.append(h("div", { class: "group-h" }, "Importo da definire"), panel(itemList(open0, { flat: true, path: true })));
 }
@@ -710,15 +718,17 @@ const select = (opts, val, onchange) => { const s = h("select", { onchange: () =
 function openItem(id, opts = {}) {
   const fresh = !!opts.draft;
   const it = opts.draft || items[id]; if (!it) return;
-  const d = { ...it };
+  if (it.kind === "list") return openList(id, opts);
+  const d = { ...it, ...(opts.preset || {}) };
+  const curCat = () => fresh ? it.parent : (catOf(id) || {}).id;
+  const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), catOf(d.parent) ? catOf(d.parent).id : curCat(), v => { if (v === curCat()) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } });
   const body = h("div");
   const draw = () => {
-    body.replaceChildren(
+    body.replaceChildren(...[
       h("div", { class: "form-group" },
         field(h("input", { type: "text", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
-        field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || ""))),
-      h("div", { class: "form-group" },
-        field(fi("list", "#8e8e93"), h("span", { class: "lab" }, "Categoria"), select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), fresh ? it.parent : (catOf(id) || {}).id, v => { const cur = fresh ? it.parent : (catOf(id) || {}).id; if (v === cur) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } }))),
+        field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
+        field(h("span", { class: "lab" }), catSel)),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
           sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; d.due_end = null; } draw(); })),
@@ -729,8 +739,6 @@ function openItem(id, opts = {}) {
         d.due_date && d.due_time ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Fine"), sw(!!d.due_end, v => { d.due_end = v ? hhmm(Math.min(1439, mins(d.due_time) + 60)) : null; draw(); })) : null,
         d.due_date && d.due_time && d.due_end ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_end, onchange: e => { const v = e.target.value; if (v && mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } })) : null),
       h("div", { class: "form-group" },
-        field(h("span", { class: "fi", style: { background: "var(--green)", fontWeight: 800, fontSize: "15px" } }, "€"), h("span", { class: "lab" }, "Spesa"),
-          h("input", { type: "text", inputmode: "decimal", class: "amt-in", placeholder: "0 = da definire", value: hasAmt(d) ? String(d.amount).replace(".", ",") : "", oninput: e => { const v = e.target.value.trim().replace(",", "."); d.amount = v === "" || !isFinite(Number(v)) ? null : Math.max(0, Number(v)); } })),
         field(fi("flag", "#e5484d"), h("span", { class: "lab" }, "Priorità"), h("div", { class: "seg" }, [["Nessuna", 0], ["Bassa", 1], ["Media", 2], ["Alta", 3]].map(([l, v]) => h("button", { class: (d.priority || 0) === v ? "on" : "", onclick: () => { d.priority = v; draw(); } }, l))))),
       d.due_date ? h("div", { class: "form-group" },
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),
@@ -738,9 +746,8 @@ function openItem(id, opts = {}) {
       d.due_date ? h("div", { class: "form-note" }, "L'avviso arriva sui dispositivi dove hai attivato le notifiche (Impostazioni ⚙︎).") : null,
       fresh ? null : h("div", { class: "form-group" },
         h("button", { class: "field btn", onclick: () => { save(); pickParent(id); } }, h("span", { class: "lab" }, "Sposta in…"), h("span", { style: { color: "var(--label2)", fontSize: "15px" } }, pathOf(id))),
-        h("button", { class: "field btn", onclick: () => { save(); closeSheet(); duplicate(id); } }, "Duplica"),
-        h("button", { class: "field btn", onclick: () => { save(); closeSheet(); addingUnder = id; it.collapsed = false; if (route.v !== "cat" || catOf(id).id !== route.id) go("c-" + catOf(id).id); focusReq = { id, sel: "add" }; render(); } }, "Aggiungi sotto-voce")),
-    );
+        h("button", { class: "field btn", onclick: () => { save(); closeSheet(); duplicate(id); } }, "Duplica")),
+    ].filter(Boolean));
   };
   const save = () => { if (fresh) { if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; } items[it.id] = it; } Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_time) it.due_end = null; if (!it.due_date) { it.due_time = null; it.due_end = null; it.remind = null; it.repeat = null; } commit(); };
   draw();
@@ -750,6 +757,78 @@ function openItem(id, opts = {}) {
     h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
     h("button", { class: "act green", onclick: () => { if (save() !== false) closeSheet(); } }, "Conferma"));
   openSheet(head("Dettagli"), body, actions);
+  if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
+}
+// ---------- scheda B: lista con righe di spesa / preventivo ----------
+function newDraft(parent, extra) {
+  const it = { id: uid(), parent, text: "", ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, amount: null, kind: null, est: false, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
+  return it;
+}
+function openNewList() { const it = newDraft(ensureInbox(), { kind: "list" }); openList(it.id, { draft: it }); }
+function openNewReminder(text, extra) { const it = newDraft(ensureInbox(), { text: text || "", due_date: selDay || today(), remind: "morning", ...extra }); openItem(it.id, { draft: it }); }
+function openList(id, opts = {}) {
+  const fresh = !!opts.draft;
+  const it = opts.draft || items[id]; if (!it) return;
+  const d = { text: it.text, notes: it.notes || "", parent: it.parent };
+  const ex = fresh ? [] : kids(id);
+  let rows = ex.map(k => ({ id: k.id, text: k.text, amount: hasAmt(k) ? String(k.amount).replace(".", ",") : "", est: !!k.est }));
+  while (rows.length < 5) rows.push({ id: null, text: "", amount: "", est: false });
+  const num = v => { const n = Number(String(v).trim().replace(",", ".")); return v === "" || !isFinite(n) ? null : Math.max(0, n); };
+  const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), d.parent, v => { d.parent = v; });
+  const tot = (est) => rows.reduce((a, x) => a + (!!x.est === est ? num(x.amount) || 0 : 0), 0);
+  const spEl = h("b", null), pvEl = h("b", null);
+  const upd = () => { spEl.textContent = fmtEur(tot(false)); pvEl.textContent = fmtEur(tot(true)); };
+  const body = h("div"), list = h("div", { class: "form-group lrows" });
+  const drawRows = () => {
+    list.replaceChildren(...rows.map((row, i) => h("div", { class: "lrow" },
+      h("div", { class: "lr1" },
+        h("input", { type: "text", class: "lt", placeholder: "Voce " + (i + 1), value: row.text, oninput: e => row.text = e.target.value }),
+        h("button", { class: "lx", title: "Togli riga", onclick: () => { rows.splice(i, 1); drawRows(); upd(); } }, "×")),
+      h("div", { class: "lr2" },
+        h("input", { type: "text", inputmode: "decimal", class: "la", placeholder: "0,00", value: row.amount, oninput: e => { row.amount = e.target.value; upd(); } }),
+        h("button", { class: "kd" + (row.est ? "" : " on"), title: "Già speso", onclick: () => { row.est = false; drawRows(); upd(); } }, "€"),
+        h("button", { class: "kd q" + (row.est ? " on" : ""), title: "Preventivo", onclick: () => { row.est = true; drawRows(); upd(); } }, "?"),
+        h("button", { class: "tr", onclick: () => toReminder(row) }, "Trasforma in promemoria")))));
+  };
+  const saveAll = () => {
+    if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; }
+    if (fresh) { Object.assign(it, { text: d.text.trim(), notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "list" }); items[it.id] = it; }
+    else { const moved = d.parent !== it.parent; Object.assign(it, { text: d.text.trim(), notes: d.notes.trim() || null }); if (moved) { it.parent = d.parent; it.ord = nextOrd(d.parent); } }
+    const keep = new Set();
+    rows.forEach((row, i) => {
+      const txt = row.text.trim(), amt = num(row.amount);
+      if (!txt && amt === null) return;
+      let k = row.id && items[row.id];
+      if (!k) { k = mkItem(it.id, txt || "Voce", {}); row.id = k.id; }
+      Object.assign(k, { text: txt || k.text || "Voce", amount: amt, est: !!row.est, ord: i + 1, parent: it.id }); keep.add(k.id);
+    });
+    ex.forEach(k => { if (!keep.has(k.id) && items[k.id]) removeItem(k.id); });
+    it.collapsed = false; commit(); return true;
+  };
+  const toReminder = row => {
+    if (!row.text.trim()) { toast("Scrivi prima la voce"); return; }
+    if (saveAll() === false) return;
+    closeSheet();
+    const k = items[row.id]; if (!k) return;
+    openItem(k.id, { preset: { due_date: today(), remind: "morning" } });
+  };
+  body.append(
+    h("div", { class: "form-group" },
+      field(h("input", { type: "text", value: d.text, placeholder: "Titolo della lista", oninput: e => d.text = e.target.value })),
+      field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes)),
+      field(h("span", { class: "lab" }), catSel)),
+    h("div", { class: "form-group" },
+      field(h("span", { class: "fi", style: { background: "var(--green)", fontWeight: 800, fontSize: "15px" } }, "€"), h("span", { class: "lab" }, "Spesa"), spEl),
+      field(h("span", { class: "fi", style: { background: "var(--orange)", fontWeight: 800, fontSize: "15px" } }, "?"), h("span", { class: "lab" }, "Preventivo"), pvEl)),
+    list,
+    h("button", { class: "lplus", title: "Aggiungi una riga", onclick: () => { rows.push({ id: null, text: "", amount: "", est: false }); drawRows(); const ins = list.querySelectorAll(".lt"); ins[ins.length - 1].focus(); } }, icon("plus")));
+  drawRows(); upd();
+  const del = () => { if (fresh) { closeSheet(); return; } confirmSheet(`Eliminare la lista “${it.text}” e le sue ${ex.length} voci?`, "Elimina", () => { removeItem(id); commit(); }); };
+  const actions = h("div", { class: "sheet-actions" },
+    h("button", { class: "act red", onclick: del }, "Elimina"),
+    h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
+    h("button", { class: "act green", onclick: () => { if (saveAll() !== false) closeSheet(); } }, "Conferma"));
+  openSheet(head("Lista"), body, actions);
   if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
 }
 function duplicate(id) {

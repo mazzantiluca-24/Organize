@@ -436,3 +436,25 @@ button.brand{cursor:pointer;border-radius:10px}
 .sp-row .t{flex:1;min-width:0}.sp-row .d{font-size:12px;color:var(--label2)}.sp-row .a{font-variant-numeric:tabular-nums;font-weight:600}
 .sp-row.done .t{text-decoration:line-through;color:var(--label2)}
 .cat-card .ico:not(:empty){font-weight:800}
+
+/* ---------- nuova lista, scheda B ---------- */
+.add-row .new-list{display:inline-flex;align-items:center;gap:5px;flex:none;color:var(--blue);font-size:14px;font-weight:600;padding:3px 10px;border-left:1px solid var(--sep);margin-left:4px;white-space:nowrap}
+.add-row .new-list svg{width:16px;height:16px}
+.eur.prev{color:var(--orange)}
+.lrows{padding:4px 0}
+.lrow{padding:8px 14px;border-bottom:.5px solid var(--sep)}
+.lrow:last-child{border-bottom:0}
+.lr1,.lr2{display:flex;align-items:center;gap:8px}
+.lr2{margin-top:6px}
+.lt{flex:1;min-width:0;font-size:16px}
+.la{width:84px;text-align:right;font-size:16px;background:var(--fill2);border-radius:8px;padding:6px 8px}
+.lx{width:28px;height:28px;border-radius:50%;color:var(--label2);font-size:20px;line-height:1}
+.kd{width:34px;height:34px;border-radius:50%;font-weight:800;font-size:16px;background:var(--fill2);color:var(--label2)}
+.kd.on{background:color-mix(in srgb,var(--green) 22%,transparent);color:var(--green)}
+.kd.q.on{background:color-mix(in srgb,var(--orange) 24%,transparent);color:var(--orange)}
+.tr{margin-left:auto;font-size:13px;font-weight:600;color:var(--blue);background:color-mix(in srgb,var(--blue) 11%,transparent);border-radius:16px;padding:7px 11px;white-space:nowrap}
+.lplus{display:grid;place-items:center;width:46px;height:46px;border-radius:50%;margin:12px auto 18px;background:var(--blue);color:#fff}
+.lplus svg{width:22px;height:22px}
+@media (min-width:800px){.wk-title{display:none}.wk-head{justify-content:flex-end}}
+.lt,.la{border:0;outline:0;background:var(--fill2);border-radius:8px;padding:8px 10px;color:var(--label)}
+.lt:focus,.la:focus{box-shadow:0 0 0 1.5px var(--blue)}
