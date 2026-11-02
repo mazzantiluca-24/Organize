@@ -2,7 +2,7 @@
 //  - Organize → Google: ogni voce con una data diventa un evento (con l'avviso scelto).
 //  - Google → Organize: gli eventi del calendario compaiono nella categoria "Google Calendar".
 // Il collegamento usa il login Google (OAuth) con le chiavi che Luca crea una volta sola e incolla nelle Impostazioni.
-import { getSetting, setSetting, nowIso, rand, sign, localToUtc, localParts, computeRemindAt } from "./util.js";
+import { getSetting, setSetting, nowIso, rand, sign, localToUtc, localParts, computeRemindAt, spanMins, endOf } from "./util.js";
 
 const apiBase = env => env.GOOGLE_API_BASE || "https://www.googleapis.com/calendar/v3";
 const tokenUrl = env => env.GOOGLE_TOKEN_URL || "https://oauth2.googleapis.com/token";
@@ -17,7 +17,7 @@ let schemaOk = false;
 export async function ensureSchema(env) {
   if (schemaOk) return;
   const cols = (await env.DB.prepare("PRAGMA table_info(items)").all()).results.map(r => r.name);
-  const add = [["gcal_id", "TEXT"], ["gcal_updated", "TEXT"], ["gcal_sync_at", "TEXT"], ["gcal_span", "TEXT"], ["gcal_src", "INTEGER NOT NULL DEFAULT 0"]];
+  const add = [["gcal_id", "TEXT"], ["gcal_updated", "TEXT"], ["gcal_sync_at", "TEXT"], ["gcal_span", "TEXT"], ["due_end", "TEXT"], ["gcal_src", "INTEGER NOT NULL DEFAULT 0"]];
   for (const [c, t] of add) if (!cols.includes(c)) { try { await env.DB.prepare(`ALTER TABLE items ADD COLUMN ${c} ${t}`).run(); } catch (_) { /* creata in parallelo */ } }
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS items_gcal ON items(gcal_id)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS gcal_tomb (gcal_id TEXT PRIMARY KEY, remote INTEGER NOT NULL DEFAULT 1, at TEXT)").run();
@@ -134,9 +134,9 @@ export async function applyEvent(env, tz, now, n, byG, tomb, st) {
     if (ex.updated_at !== ex.gcal_sync_at && Date.parse(ex.updated_at) > Date.parse(n.updatedAt || 0)) return;   // in Organize è più recente: vince Organize
     const done = ex.gcal_src ? (w.past ? 1 : ex.done) : (tick ? 1 : 0);
     const remindAt = done ? null : computeRemindAt(tz, { due_date: w.date, due_time: w.time, remind: ex.remind });
-    await env.DB.prepare(`UPDATE items SET text = ?, notes = ?, due_date = ?, due_time = ?, done = ?, remind_at = ?,
+    await env.DB.prepare(`UPDATE items SET text = ?, notes = ?, due_date = ?, due_time = ?, due_end = ?, done = ?, remind_at = ?,
         notified_at = CASE WHEN remind_at IS ? THEN notified_at ELSE ? END, updated_at = ?, gcal_updated = ?, gcal_sync_at = ?, gcal_span = ? WHERE id = ?`)
-      .bind(text, notes, w.date, w.time, done, remindAt, remindAt, remindAt && remindAt < lateCut ? stamp : null, stamp, n.updated || null, stamp, w.span, ex.id).run();
+      .bind(text, notes, w.date, w.time, w.time ? endOf(w.time, +w.span.replace(/^R?m/, "") || 30) : null, done, remindAt, remindAt, remindAt && remindAt < lateCut ? stamp : null, stamp, n.updated || null, stamp, w.span, ex.id).run();
     return;
   }
   const oid = n.organizeId;
@@ -146,9 +146,9 @@ export async function applyEvent(env, tz, now, n, byG, tomb, st) {
     if (await env.DB.prepare("SELECT 1 FROM items WHERE id = ?").bind(oid).first()) return;
   }
   if (!st.catOk) { await ensureCategory(env); st.catOk = true; }
-  await env.DB.prepare(`INSERT INTO items (id, parent, text, ord, done, collapsed, due_date, due_time, notes, priority, updated_at, gcal_id, gcal_updated, gcal_sync_at, gcal_span, gcal_src)
-      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1)`)
-    .bind(rand(9), CAT_ID, text, w.ms / 1e6, w.past ? 1 : 0, w.date, w.time, notes, stamp, n.id, n.updated || null, stamp, w.span).run();
+  await env.DB.prepare(`INSERT INTO items (id, parent, text, ord, done, collapsed, due_date, due_time, due_end, notes, priority, updated_at, gcal_id, gcal_updated, gcal_sync_at, gcal_span, gcal_src)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1)`)
+    .bind(rand(9), CAT_ID, text, w.ms / 1e6, w.past ? 1 : 0, w.date, w.time, w.time ? endOf(w.time, +w.span.replace(/^R?m/, "") || 30) : null, notes, stamp, n.id, n.updated || null, stamp, w.span).run();
 }
 
 
@@ -195,7 +195,7 @@ function eventBody(tz, it, creating) {
   const b = { summary: (it.done && own ? "✓ " : "") + it.text, description: it.notes || "", extendedProperties: { private: { organizeId: it.id } } };
   if (own) b.reminders = reminders(it);       // gli eventi arrivati da Google tengono i loro avvisi
   if (it.due_time) {
-    const s = localToUtc(tz, it.due_date, it.due_time), mins = it.gcal_span && it.gcal_span[0] === "m" ? Math.max(5, +it.gcal_span.slice(1) || 30) : 30;
+    const s = localToUtc(tz, it.due_date, it.due_time), mins = spanMins(it);
     b.start = { dateTime: new Date(s).toISOString(), timeZone: tz, date: null };
     b.end = { dateTime: new Date(s + mins * 60000).toISOString(), timeZone: tz, date: null };
   } else {
@@ -218,7 +218,7 @@ async function push(env, tz) {
   // 2) voci nuove o cambiate (non spedisco lo storico vecchio di più di una settimana)
   const cutoff = localParts(tz, Date.now() - BACK_DAYS * 864e5).date;
   const rows = (await env.DB.prepare(
-    `SELECT id, text, notes, due_date, due_time, remind, done, updated_at, gcal_id, gcal_span, gcal_src FROM items
+    `SELECT id, text, notes, due_date, due_time, due_end, remind, done, updated_at, gcal_id, gcal_span, gcal_src FROM items
      WHERE parent != '' AND (
        (due_date IS NOT NULL AND (gcal_id IS NOT NULL OR due_date >= ?) AND (gcal_id IS NULL OR gcal_sync_at IS NULL OR gcal_sync_at != updated_at))
        OR (due_date IS NULL AND gcal_id IS NOT NULL))

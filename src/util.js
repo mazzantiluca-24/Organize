@@ -58,3 +58,18 @@ export function localParts(tz, ms) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 }
+
+// durata in minuti di una voce con ora: usa l'ora di fine se c'è, altrimenti l'eventuale durata arrivata dal calendario, altrimenti 30
+export function spanMins(it) {
+  if (it.due_time && it.due_end && /^\d{2}:\d{2}$/.test(it.due_end)) {
+    const f = t => +t.slice(0, 2) * 60 + +t.slice(3, 5), d = f(it.due_end) - f(it.due_time);
+    if (d > 0) return d;
+  }
+  const m = /^R?m(\d+)/.exec(it.gcal_span || "");
+  return m ? Math.max(5, +m[1] || 30) : 30;
+}
+// ora di fine (HH:MM) dello stesso giorno per un evento che inizia a `time` e dura `mins`; null se sfora la mezzanotte
+export function endOf(time, mins) {
+  const t = +time.slice(0, 2) * 60 + +time.slice(3, 5) + mins;
+  return t >= 1440 || mins <= 30 ? null : String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
+}

@@ -2,7 +2,7 @@
 //  - Organize → iCloud: le voci con data diventano eventi nel calendario "Organize" (creato da solo).
 //  - iCloud → Organize: gli eventi di tutti i tuoi calendari (da una settimana fa a due mesi avanti) arrivano nella categoria "Google Calendar"... che qui si chiama "Calendario".
 // Accesso con ID Apple + "password per app" (si crea su account.apple.com), nessuna pagina da configurare.
-import { getSetting, setSetting, nowIso, rand, localToUtc, localParts, computeRemindAt } from "./util.js";
+import { getSetting, setSetting, nowIso, rand, localToUtc, localParts, computeRemindAt, spanMins } from "./util.js";
 import { applyEvent, removeLocal, lock, CAT_ID } from "./gcal.js";
 
 const base = env => env.CALDAV_BASE || "https://caldav.icloud.com";
@@ -159,7 +159,7 @@ async function pull(env, tz, forceFull) {
 function bodyLines(tz, it) {
   const L = [];
   if (it.due_time) {
-    const s = localToUtc(tz, it.due_date, it.due_time), mins = it.gcal_span && /^m/.test(it.gcal_span) ? Math.max(5, +it.gcal_span.slice(1) || 30) : 30;
+    const s = localToUtc(tz, it.due_date, it.due_time), mins = spanMins(it);
     L.push("DTSTART:" + icsUtc(s), "DTEND:" + icsUtc(s + mins * 60000));
   } else {
     const days = it.gcal_span && /^d/.test(it.gcal_span) ? Math.max(1, +it.gcal_span.slice(1) || 1) : 1;
@@ -199,7 +199,7 @@ async function push(env, tz) {
   }
   const cutoff = localParts(tz, Date.now() - BACK_DAYS * 864e5).date;
   const rows = (await env.DB.prepare(
-    `SELECT id, text, notes, due_date, due_time, remind, done, updated_at, gcal_id, gcal_span, gcal_src FROM items
+    `SELECT id, text, notes, due_date, due_time, due_end, remind, done, updated_at, gcal_id, gcal_span, gcal_src FROM items
      WHERE parent != '' AND (gcal_span IS NULL OR substr(gcal_span, 1, 1) != 'R') AND (
        (due_date IS NOT NULL AND (gcal_id IS NOT NULL OR due_date >= ?) AND (gcal_id IS NULL OR gcal_sync_at IS NULL OR gcal_sync_at != updated_at))
        OR (due_date IS NULL AND gcal_id IS NOT NULL))

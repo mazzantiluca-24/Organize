@@ -144,7 +144,7 @@ async function pull() {
   const data = await api("/api/items");
   const next = {}; const nextSynced = {};
   for (const r of data.items) {
-    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
+    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
   const same = norm(next) === norm(items);
@@ -155,7 +155,7 @@ function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
 
 function mkItem(parent, text, extra) {
-  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
+  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
   items[it.id] = it; return it;
 }
 function removeItem(id) { desc(id).concat(id).forEach(k => delete items[k]); }
@@ -298,7 +298,7 @@ function itemNode(it, opts) {
   const meta = [];
   if (it.due_date) {
     const late = !it.done && it.due_date < t, isT = it.due_date === t;
-    meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time : "")));
+    meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time + (durOf(it) ? "–" + it.due_end : "") : "")));
   }
   if (it.priority) meta.push(h("span", { class: "prio p" + it.priority }, PRIO[it.priority]));
   if (it.repeat) meta.push(h("span", null, icon("repeat")));
@@ -412,14 +412,15 @@ const DOW = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const ROW = 52, DUR = 48;
 const mins = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+const durOf = it => (it.due_time && it.due_end && mins(it.due_end) > mins(it.due_time)) ? mins(it.due_end) - mins(it.due_time) : 0;
 const hhmm = m => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
 function hourRange(list) {
   let s = 8, e = 20;
-  for (const it of list) if (it.due_time) { const hr = +it.due_time.slice(0, 2); s = Math.min(s, hr); e = Math.max(e, hr + 2); }
+  for (const it of list) if (it.due_time) { const hr = +it.due_time.slice(0, 2); s = Math.min(s, hr); e = Math.max(e, hr + 2, Math.ceil((mins(it.due_time) + durOf(it)) / 60)); }
   return [Math.max(0, s), Math.min(24, e)];
 }
 function layoutDay(list) {
-  const evs = list.filter(x => x.due_time).map(it => ({ it, start: mins(it.due_time), end: mins(it.due_time) + DUR })).sort((a, b) => a.start - b.start);
+  const evs = list.filter(x => x.due_time).map(it => ({ it, start: mins(it.due_time), end: mins(it.due_time) + Math.max(durOf(it), DUR) })).sort((a, b) => a.start - b.start);
   const out = []; let cl = [], clEnd = -1;
   const flush = () => { if (!cl.length) return; const lanes = []; cl.forEach(ev => { let l = lanes.findIndex(x => x <= ev.start); if (l < 0) { l = lanes.length; lanes.push(0); } lanes[l] = ev.end; ev.lane = l; }); cl.forEach(ev => ev.lanes = lanes.length); out.push(...cl); cl = []; };
   evs.forEach(ev => { if (cl.length && ev.start >= clEnd) flush(); clEnd = cl.length ? Math.max(clEnd, ev.end) : ev.end; cl.push(ev); });
@@ -428,7 +429,7 @@ function layoutDay(list) {
 function moveItem(id, day, time) {
   const it = items[id]; if (!it) return;
   if (it.due_date === day && (time === undefined || it.due_time === time)) return;
-  it.due_date = day; if (time !== undefined) it.due_time = time; selDay = day;
+  const dur = durOf(it); it.due_date = day; if (time !== undefined) { it.due_time = time; it.due_end = time && dur && mins(time) + dur < 1440 ? hhmm(mins(time) + dur) : null; } selDay = day;
   toast("Spostato a " + dayLabel(day, true) + (time ? ", " + time : "")); commit();
 }
 function dayParts(d, dated, s0, e0, idx) {
@@ -454,10 +455,10 @@ function dayParts(d, dated, s0, e0, idx) {
   const col = h("div", { class: "tl-col" + cls, style: { height: (e0 - s0) * ROW + "px" } });
   layoutDay(list).forEach(ev => {
     const it = ev.it;
-    const b = h("button", { class: "tl-ev" + (it.done ? " done" : ""), draggable: "true", "data-id": it.id, title: it.text + " · " + it.due_time, style: {
-      "--c": colorOfIt(it), top: ((ev.start / 60 - s0) * ROW + 1) + "px", height: (DUR / 60 * ROW - 2) + "px",
+    const b = h("button", { class: "tl-ev" + (it.done ? " done" : ""), draggable: "true", "data-id": it.id, title: it.text + " · " + it.due_time + (durOf(it) ? "–" + it.due_end : ""), style: {
+      "--c": colorOfIt(it), top: ((ev.start / 60 - s0) * ROW + 1) + "px", height: (Math.max(durOf(it), DUR) / 60 * ROW - 2) + "px",
       left: `calc(${ev.lane / ev.lanes * 100}% + 2px)`, width: `calc(${100 / ev.lanes}% - 4px)` }, onclick: () => openItem(it.id) },
-      h("span", { class: "wk-tm" }, it.due_time), " ", iconOfIt(it) ? iconOfIt(it) + " " : "", it.text);
+      h("span", { class: "wk-tm" }, it.due_time + (durOf(it) ? "–" + it.due_end : "")), " ", iconOfIt(it) ? iconOfIt(it) + " " : "", it.text);
     dnd(b); col.append(b);
   });
   col.addEventListener("dblclick", e => {
@@ -478,7 +479,7 @@ function dayParts(d, dated, s0, e0, idx) {
   return { head, allday, col, count: list.filter(x => !x.done).length + late.length, total: list.length + late.length };
 }
 function newAt(date, time) {   // doppio clic sulla settimana: scheda per un nuovo promemoria, creato solo con Conferma
-  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
+  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, due_end: null, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
   it.ord = nextOrd(it.parent); openItem(it.id, { draft: it });
 }
 function axis(s0, e0) {
@@ -618,11 +619,13 @@ function openItem(id, opts = {}) {
         field(fi("list", "#8e8e93"), h("span", { class: "lab" }, "Categoria"), select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), fresh ? it.parent : (catOf(id) || {}).id, v => { const cur = fresh ? it.parent : (catOf(id) || {}).id; if (v === cur) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } }))),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
-          sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; } draw(); })),
+          sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; d.due_end = null; } draw(); })),
         d.due_date ? field(h("span", { class: "lab" }), h("input", { type: "date", value: d.due_date, onchange: e => { if (e.target.value) { d.due_date = e.target.value; draw(); } } })) : null,
         d.due_date ? h("div", { class: "chips" }, [["Oggi", 0], ["Domani", 1], ["Tra 1 settimana", 7]].map(([l, n]) => h("button", { class: "chip", onclick: () => { d.due_date = addDays(today(), n); draw(); } }, l))) : null,
-        d.due_date ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Ora"), sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null,
-        d.due_date && d.due_time ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_time, onchange: e => { if (e.target.value) d.due_time = e.target.value; } })) : null),
+        d.due_date ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Ora"), sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v) d.due_end = null; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null,
+        d.due_date && d.due_time ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_time, onchange: e => { if (e.target.value) { const du = durOf(d); d.due_time = e.target.value; if (du) d.due_end = mins(d.due_time) + du < 1440 ? hhmm(mins(d.due_time) + du) : null; draw(); } } })) : null,
+        d.due_date && d.due_time ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Fine"), sw(!!d.due_end, v => { d.due_end = v ? hhmm(Math.min(1439, mins(d.due_time) + 60)) : null; draw(); })) : null,
+        d.due_date && d.due_time && d.due_end ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_end, onchange: e => { const v = e.target.value; if (v && mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } })) : null),
       h("div", { class: "form-group" },
         field(fi("flag", "#e5484d"), h("span", { class: "lab" }, "Priorità"), h("div", { class: "seg" }, [["Nessuna", 0], ["Bassa", 1], ["Media", 2], ["Alta", 3]].map(([l, v]) => h("button", { class: (d.priority || 0) === v ? "on" : "", onclick: () => { d.priority = v; draw(); } }, l))))),
       d.due_date ? h("div", { class: "form-group" },
@@ -635,7 +638,7 @@ function openItem(id, opts = {}) {
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); addingUnder = id; it.collapsed = false; if (route.v !== "cat" || catOf(id).id !== route.id) go("c-" + catOf(id).id); focusReq = { id, sel: "add" }; render(); } }, "Aggiungi sotto-voce")),
     );
   };
-  const save = () => { if (fresh) { if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; } items[it.id] = it; } Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_date) { it.due_time = null; it.remind = null; it.repeat = null; } commit(); };
+  const save = () => { if (fresh) { if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; } items[it.id] = it; } Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_time) it.due_end = null; if (!it.due_date) { it.due_time = null; it.due_end = null; it.remind = null; it.repeat = null; } commit(); };
   draw();
   const del = () => { if (fresh) { closeSheet(); return; } const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); };
   const actions = h("div", { class: "sheet-actions" },

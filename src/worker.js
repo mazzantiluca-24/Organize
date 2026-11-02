@@ -1,5 +1,5 @@
 import { generateVapid, sendPush, b64u } from "./webpush.js";
-import { enc, nowIso, rand, getSetting, setSetting, ensureSetting, sign, localToUtc, computeRemindAt } from "./util.js";
+import { enc, nowIso, rand, getSetting, setSetting, ensureSetting, sign, localToUtc, computeRemindAt, spanMins } from "./util.js";
 import * as G from "./gcal.js";
 import * as C from "./caldav.js";
 
@@ -35,7 +35,7 @@ async function isAuthed(req, env) {
 const cookie = v => `s=${v}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${365 * 86400}`;
 
 // ---------- items ----------
-const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "remind", "repeat", "notes", "color", "icon", "priority"];
+const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "due_end", "remind", "repeat", "notes", "color", "icon", "priority"];
 function clean(it) {
   const s = v => (v === undefined || v === null || v === "" ? null : String(v).slice(0, 5000));
   return {
@@ -47,6 +47,7 @@ function clean(it) {
     collapsed: it.collapsed ? 1 : 0,
     due_date: /^\d{4}-\d{2}-\d{2}$/.test(it.due_date || "") ? it.due_date : null,
     due_time: /^\d{2}:\d{2}$/.test(it.due_time || "") ? it.due_time : null,
+    due_end: /^\d{2}:\d{2}$/.test(it.due_end || "") && /^\d{2}:\d{2}$/.test(it.due_time || "") && it.due_end > it.due_time ? it.due_end : null,
     priority: [1, 2, 3].includes(Number(it.priority)) ? Number(it.priority) : 0,
     remind: s(it.remind), repeat: s(it.repeat), notes: s(it.notes), color: s(it.color), icon: s(it.icon),
   };
@@ -125,7 +126,7 @@ function fold(line) { const out = []; while (line.length > 74) { out.push(line.s
 const icsUtc = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 async function calendar(env) {
   const tz = (await getSetting(env, "tz")) || "Europe/Rome";
-  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, remind, done, updated_at FROM items WHERE due_date IS NOT NULL AND gcal_src = 0").all()).results;
+  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, due_end, gcal_span, remind, done, updated_at FROM items WHERE due_date IS NOT NULL AND gcal_src = 0").all()).results;
   const all = (await env.DB.prepare("SELECT id, parent, text FROM items").all()).results;
   const byId = Object.fromEntries(all.map(r => [r.id, r]));
   const path = id => { const p = []; let c = byId[id]?.parent; for (let i = 0; c && byId[c] && i < 20; i++) { p.unshift(byId[c].text); c = byId[c].parent; } return p.join(" › "); };
@@ -134,7 +135,7 @@ async function calendar(env) {
     L.push("BEGIN:VEVENT", "UID:" + r.id + "@organize", "DTSTAMP:" + icsUtc(Date.parse(r.updated_at) || Date.now()));
     if (r.due_time) {
       const s = localToUtc(tz, r.due_date, r.due_time);
-      L.push("DTSTART:" + icsUtc(s), "DTEND:" + icsUtc(s + 30 * 60000));
+      L.push("DTSTART:" + icsUtc(s), "DTEND:" + icsUtc(s + spanMins(r) * 60000));
     } else {
       const d = new Date(r.due_date + "T12:00:00Z"); const n = new Date(d.getTime() + 864e5).toISOString().slice(0, 10);
       L.push("DTSTART;VALUE=DATE:" + r.due_date.replace(/-/g, ""), "DTEND;VALUE=DATE:" + n.replace(/-/g, ""), "TRANSP:TRANSPARENT");
