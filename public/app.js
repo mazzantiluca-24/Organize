@@ -431,6 +431,10 @@ function addRow(parent, ph, extra) {
     if (e.key === "Escape") { addingUnder = null; render(); }
   });
   inp.addEventListener("blur", () => { if (!inp.value.trim() && addingUnder === parent) setTimeout(() => { if (addingUnder === parent && !document.activeElement.matches("[data-add]")) { addingUnder = null; render(); } }, 150); });
+  if (typeof extra === "function") {   // barra in alto: due pulsanti uguali, niente campo di testo né spunta
+    const b = (label, fn) => h("button", { class: "add-btn", type: "button", onclick: fn }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, label));
+    return h("li", null, h("div", { class: "add-row two" }, b("Nuovo promemoria", () => openNewReminder("")), b("Nuova lista", openNewList)));
+  }
   const ok = h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check"));
   return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); if (typeof extra === "function") { const tx = inp.value.trim(); inp.value = ""; openNewReminder(tx); } else inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp,
     typeof extra === "function" ? h("button", { class: "new-list", type: "button", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); openNewList(); } }, icon("plus"), h("span", null, "Nuova lista")) : null, ok));
