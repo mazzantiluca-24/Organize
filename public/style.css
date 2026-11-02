@@ -324,7 +324,12 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 .wk-title .t-long{display:none}
 /* Mac: niente saluto; titolo + frecce all'altezza del logo, colonne all'altezza delle pillole */
 @media (min-width:800px){
-  .main-inner.wide{padding-top:calc(66px + var(--safeT))} /* 66px = dove iniziano le pillole nella barra laterale */
+  .main-inner.wide{padding-top:calc(18px + var(--safeT))} /* 18px = riga del logo; sotto: riga "Nuovo promemoria" (34px) + 14px, così il titolo della settimana parte a 66px = altezza delle pillole */
+  .add-top{list-style:none;margin:0 2px 14px;padding:0;height:34px}
+  .add-top li{height:100%}
+  .add-top .add-row{height:34px;padding:0 12px;gap:10px;border-radius:10px;background:var(--fill2);border:1px solid var(--sep)}
+  .add-top .add-row:focus-within{border-color:var(--blue);background:var(--bg2)}
+  .add-top .add-row input{font-size:15px}
   .main-inner.wide .topbar,.main-inner.wide .hero{display:none}
   .main-inner.wide .wk{background:none;box-shadow:none;padding:0;border-radius:0}
   .wk-head{height:51px;margin:0 2px} /* 51px = altezza delle pillole: il titolo sta alla loro altezza, i giorni partono dal loro bordo basso */
@@ -360,3 +365,9 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 .g-steps{margin:0 0 6px;padding-left:20px;line-height:1.5}
 .g-steps li{margin-bottom:9px}
 .g-steps a{color:var(--blue)}
+
+/* scheda dettagli: tre pillole in basso */
+.sheet-actions{position:sticky;bottom:0;margin:4px -16px 0;padding:12px 16px 4px;background:var(--bg);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;z-index:1}
+.act{padding:12px 4px;border-radius:24px;font-size:16px;font-weight:650;color:var(--c);background:color-mix(in srgb,var(--c) 15%,transparent);transition:filter .15s}
+.act:hover{filter:brightness(.95)}
+.act.red{--c:var(--red)}.act.sky{--c:#32ade6}.act.green{--c:var(--green)}

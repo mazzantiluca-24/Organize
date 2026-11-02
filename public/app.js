@@ -524,12 +524,14 @@ function renderToday(inner) {
       h("span", { class: "pill" + (todayOpen ? "" : " zero") }, h("b", null, todayOpen), "oggi"),
       h("span", { class: "pill green" + (todayDone ? "" : " zero") }, h("b", null, todayDone), todayDone === 1 ? "fatta" : "fatte"),
       h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
+  const addNode = addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } }));
+  if (!isMobile()) inner.append(h("ul", { class: "add-top" }, addNode));   // Mac: in alto, sopra la settimana
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
   const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
   const l = itemList(dayList, { flat: true, path: true });
-  l.append(addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } })));
+  if (isMobile()) l.append(addNode);   // iPhone: resta sotto la lista del giorno
   inner.append(panel(l));
   if (cats().length) {
     inner.append(h("div", { class: "group-h" }, "Categorie"));
@@ -619,12 +621,16 @@ function openItem(id) {
         h("button", { class: "field btn", onclick: () => { save(); pickParent(id); } }, h("span", { class: "lab" }, "Sposta in…"), h("span", { style: { color: "var(--label2)", fontSize: "15px" } }, pathOf(id))),
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); duplicate(id); } }, "Duplica"),
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); addingUnder = id; it.collapsed = false; if (route.v !== "cat" || catOf(id).id !== route.id) go("c-" + catOf(id).id); focusReq = { id, sel: "add" }; render(); } }, "Aggiungi sotto-voce")),
-      h("div", { class: "form-group" },
-        h("button", { class: "field btn danger", onclick: () => { const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); } }, "Elimina")));
+    );
   };
   const save = () => { Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_date) { it.due_time = null; it.remind = null; it.repeat = null; } commit(); };
   draw();
-  openSheet(head("Dettagli", btn("Annulla", closeSheet), btn("Fine", () => { save(); closeSheet(); }, "r")), body);
+  const del = () => { const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); };
+  const actions = h("div", { class: "sheet-actions" },
+    h("button", { class: "act red", onclick: del }, "Elimina"),
+    h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
+    h("button", { class: "act green", onclick: () => { save(); closeSheet(); } }, "Conferma"));
+  openSheet(head("Dettagli"), body, actions);
 }
 function duplicate(id) {
   const src = items[id]; const sib = kids(src.parent); const i = sib.findIndex(x => x.id === id);
