@@ -2,7 +2,7 @@
   --bg:#fbfbfa; --bg2:#ffffff; --side:#f4f4f2; --fill:rgba(55,53,47,.08); --fill2:rgba(55,53,47,.05);
   --label:#2f2f2d; --label2:rgba(55,53,47,.62); --label3:rgba(55,53,47,.32); --sep:rgba(55,53,47,.10);
   --blue:#2383e2; --red:#e5484d; --orange:#e8890c; --green:#2eaa6e;
-  --radius:12px; --sideW:280px;
+  --radius:12px; --sideW:228px;
   --shadow:0 1px 2px rgba(15,15,15,.04),0 0 0 1px rgba(55,53,47,.07);
   --shadow-lg:0 12px 40px rgba(15,15,15,.18);
   --safeT:env(safe-area-inset-top,0px); --safeB:env(safe-area-inset-bottom,0px);
@@ -458,3 +458,29 @@ button.brand{cursor:pointer;border-radius:10px}
 @media (min-width:800px){.wk-title{display:none}.wk-head{justify-content:flex-end}}
 .lt,.la{border:0;outline:0;background:var(--fill2);border-radius:8px;padding:8px 10px;color:var(--label)}
 .lt:focus,.la:focus{box-shadow:0 0 0 1.5px var(--blue)}
+
+/* ---------- barra laterale stretta, colori ---------- */
+.swatches{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px 12px;border-top:.5px solid var(--sep)}
+.swatches button{width:24px;height:24px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.swatches button.on{box-shadow:0 0 0 2px var(--bg2),0 0 0 4px currentColor;outline:0}
+.swatches .sw0{background:var(--fill);color:var(--label2);font-size:13px;display:grid;place-items:center}
+@media (min-width:800px){
+  .side-pills{gap:4px;margin:2px 2px 12px}
+  .sp{padding:3px 2px 3px;border-radius:11px;font-size:10px}
+  .sp b{font-size:16px;line-height:1.1}
+  .cat .ct{display:none}
+  .cat{padding:4px 8px;min-height:32px;gap:8px}
+  .cat .nm{font-size:14px}
+  .side-scroll{padding-left:10px;padding-right:10px}
+}
+@media (min-width:800px){.add-top .add-row input{flex:0 1 300px}.add-top .add-row .new-list{margin-right:auto;border-left:0;margin-left:0}}
+@media (min-width:800px){
+  .side-head{padding:6px 6px 16px}
+  .side .brand{gap:6px}
+  .side .brand .b-tile{width:30px;height:30px}
+  .side .brand .wm{height:21px}
+  .side .head-btns{gap:0}
+  .side .head-btns .icon-btn{width:26px;height:26px}
+  .wk-head{height:35px}
+  .add-top .add-row input{flex:0 1 190px}
+}

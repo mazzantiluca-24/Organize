@@ -103,7 +103,7 @@ const subTotal = id => desc(id).reduce((a, k) => a + spent(items[k]), 0);   // s
 const fullTotal = id => spent(items[id]) + subTotal(id);
 const desc = id => { const out = []; const w = x => kids(x).forEach(k => { out.push(k.id); w(k.id); }); w(id); return out; };
 const catOf = id => { let c = items[id]; for (let i = 0; c && c.parent && i < 50; i++) c = items[c.parent]; return c; };
-const colorOf = id => (catOf(id) || {}).color || COLORS[5];
+const colorOf = id => (items[id] && items[id].parent && items[id].color) || (catOf(id) || {}).color || COLORS[5];
 const pathOf = id => { const out = []; let p = items[id] && items[id].parent; for (let i = 0; p && items[p] && i < 50; i++) { out.unshift(items[p].text); p = items[p].parent; } return out.join(" › "); };
 const nextOrd = p => { const k = kids(p); return k.length ? k[k.length - 1].ord + 1 : 1; };
 const visible = it => showDone || !it.done || recentDone.has(it.id);
@@ -256,7 +256,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Nuova categoria", onclick: () => openCategory(null) }, icon("plus")), h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -487,7 +487,7 @@ function dayParts(d, dated, s0, e0, idx) {
   const list = dated.filter(x => x.due_date === d).sort(byDue);
   const late = d === t ? dated.filter(x => x.due_date < t && !x.done).sort(byDue) : [];
   const cls = (d === selDay ? " sel" : "") + (d === t ? " today" : "") + (d < t ? " past" : "") + (idx % 2 ? " alt" : "") + (idx > 0 ? " vl" : "");
-  const colorOfIt = it => { const cat = catOf(it.id); return (cat && cat.color) || COLORS[5]; };
+  const colorOfIt = it => it.color || (catOf(it.id) || {}).color || COLORS[5];
   const iconOfIt = it => { const cat = catOf(it.id); return (cat && cat.icon) || ""; };
   const dnd = (el, getTime) => {
     el.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", el.dataset.id); e.dataTransfer.effectAllowed = "move"; });
@@ -728,7 +728,8 @@ function openItem(id, opts = {}) {
       h("div", { class: "form-group" },
         field(h("input", { type: "text", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
         field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
-        field(h("span", { class: "lab" }), catSel)),
+        field(h("span", { class: "lab" }), catSel),
+        h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
           sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; d.due_end = null; } draw(); })),
@@ -915,6 +916,7 @@ async function openSettings() {
   }
   const calCode = h("code", null, s.calendarUrl);
   body.replaceChildren(
+    h("div", { class: "form-group" }, h("button", { class: "field btn", onclick: () => { closeSheet(); openCategory(null); } }, fi("plus", "var(--blue)"), h("span", { class: "lab", style: { color: "var(--blue)" } }, "Nuova categoria"))),
     h("div", { class: "form-group-title" }, "Aspetto"),
     h("div", { class: "form-group" }, field(h("span", { class: "lab" }, "Tema"), h("div", { class: "seg" }, [["Auto", "auto"], ["Chiaro", "light"], ["Scuro", "dark"]].map(([l, v]) => h("button", { class: lsGet("theme", "auto") === v ? "on" : "", onclick: e => { lsSet("theme", v); applyTheme(); e.target.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === e.target)); } }, l))))),
     h("div", { class: "form-group-title" }, "Avvisi"), pushGroup, status,
