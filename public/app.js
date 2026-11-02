@@ -96,6 +96,10 @@ const lsSet = (k, v) => { try { localStorage.setItem(LS + k, JSON.stringify(v));
 // ================= tree helpers =================
 const kids = p => Object.values(items).filter(x => x.parent === p).sort((a, b) => a.ord - b.ord || (a.id < b.id ? -1 : 1));
 const cats = () => kids("");
+const fmtEur = n => "€ " + Number(n || 0).toLocaleString("it-IT", { minimumFractionDigits: Number.isInteger(Math.round(n * 100) / 100) ? 0 : 2, maximumFractionDigits: 2 });
+const hasAmt = it => it.amount !== null && it.amount !== undefined;
+const subTotal = id => desc(id).reduce((a, k) => a + (items[k].amount || 0), 0);   // somma delle sotto-voci
+const fullTotal = id => (items[id].amount || 0) + subTotal(id);
 const desc = id => { const out = []; const w = x => kids(x).forEach(k => { out.push(k.id); w(k.id); }); w(id); return out; };
 const catOf = id => { let c = items[id]; for (let i = 0; c && c.parent && i < 50; i++) c = items[c.parent]; return c; };
 const colorOf = id => (catOf(id) || {}).color || COLORS[5];
@@ -144,7 +148,7 @@ async function pull() {
   const data = await api("/api/items");
   const next = {}; const nextSynced = {};
   for (const r of data.items) {
-    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
+    const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
   const same = norm(next) === norm(items);
@@ -155,7 +159,7 @@ function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
 
 function mkItem(parent, text, extra) {
-  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
+  const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, amount: null, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
   items[it.id] = it; return it;
 }
 function removeItem(id) { desc(id).concat(id).forEach(k => delete items[k]); }
@@ -181,7 +185,7 @@ function toggleDone(id) {
 // ================= routing =================
 function parseHash() {
   const h = location.hash.slice(1);
-  if (h === "today" || h === "scheduled" || h === "all" || h === "done") return { v: h };
+  if (h === "today" || h === "scheduled" || h === "all" || h === "done" || h === "spese") return { v: h };
   if (h.startsWith("c-") && items[h.slice(2)]) return { v: "cat", id: h.slice(2) };
   if (h.startsWith("i-") && items[h.slice(2)]) { const c = catOf(h.slice(2)); return { v: "cat", id: c.id, hl: h.slice(2) }; }
   return { v: "today" };
@@ -263,6 +267,8 @@ function renderSide() {
         tile("scheduled", "Programmati", c.sc, "var(--red)", "cal"),
         tile("all", "Tutti", c.all, "#5b5b60", "tray"),
         tile("done", "Completati", c.dn, "#8e8e93", "done")),
+      h("div", { class: "cats spese-entry" }, h("button", { class: "cat" + (route.v === "spese" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("spese"); } },
+        h("span", { class: "ico", style: { "--c": "#34c759" } }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth()))), h("span", { class: "chev" }, icon("chev")))),
       h("div", { class: "sec-title" }, "Le mie categorie"),
       catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
     h("div", { class: "side-foot" },
@@ -283,6 +289,7 @@ function renderMain() {
   else if (v === "scheduled") renderScheduled(inner);
   else if (v === "all") renderAll(inner);
   else if (v === "done") renderDoneView(inner);
+  else if (v === "spese") renderSpese(inner);
   return h("main", { class: "main" }, inner);
 }
 
@@ -314,6 +321,7 @@ function renderMainMobile(inner) {
   else if (v === "scheduled") renderScheduled(inner);
   else if (v === "all") renderAll(inner);
   else if (v === "done") renderDoneView(inner);
+  else if (v === "spese") renderSpese(inner);
   const pill = (view, label, n) => h("button", { class: "sp mb" + (route.v === view ? " on" : ""), onclick: () => go(view) }, h("b", null, n || 0), h("span", null, label));
   inner.append(h("div", { class: "mob-bar" }, pill("scheduled", "programmati", c.sc), pill("all", "tutti", c.all), pill("done", "completati", c.dn)));
   return h("main", { class: "main" }, inner);
@@ -334,6 +342,8 @@ function itemNode(it, opts) {
     const late = !it.done && it.due_date < t, isT = it.due_date === t;
     meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time + (durOf(it) ? "–" + it.due_end : "") : "")));
   }
+  if (hasAmt(it)) meta.push(h("span", { class: "eur" }, it.amount ? fmtEur(it.amount) : "€ da definire"));
+  if (!opts.flat) { const st = subTotal(it.id); if (st > 0) meta.push(h("span", { class: "eur tot" }, "Totale " + fmtEur(fullTotal(it.id)))); }
   if (it.priority) meta.push(h("span", { class: "prio p" + it.priority }, PRIO[it.priority]));
   if (it.repeat) meta.push(h("span", null, icon("repeat")));
   if (it.remind && it.remind !== "none" && it.due_date) meta.push(h("span", null, icon("bell")));
@@ -518,7 +528,7 @@ function dayParts(d, dated, s0, e0, idx) {
   return { head, allday, col, count: list.filter(x => !x.done).length + late.length, total: list.length + late.length };
 }
 function newAt(date, time) {   // doppio clic sulla settimana: scheda per un nuovo promemoria, creato solo con Conferma
-  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, due_end: null, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
+  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, due_end: null, amount: null, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
   it.ord = nextOrd(it.parent); openItem(it.id, { draft: it });
 }
 function axis(s0, e0) {
@@ -587,13 +597,15 @@ function renderToday(inner) {
   inner.append(h("ul", { class: "add-top" }, addNode));   // in alto, sopra la settimana (Mac e iPhone)
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
+  const pending = Object.values(items).filter(x => x.parent && !x.due_date && !x.done && hasAmt(x) && visible(x));
+  if (pending.length) { inner.append(h("div", { class: "group-h" }, "In sospeso")); inner.append(panel(itemList(pending, { flat: true, path: true }))); }
   const dayList = dated.filter(x => x.due_date === selDay && visible(x)).sort(byDue);
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
   const l = itemList(dayList, { flat: true, path: true });
   inner.append(panel(l));
   if (cats().length) {
     inner.append(h("div", { class: "group-h" }, "Categorie"));
-    inner.append(h("div", { class: "cat-cards" }, cats().map(cat => {
+    inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null, cats().map(cat => {
       const all = desc(cat.id), doneN = all.filter(k => items[k].done).length, openN = all.length - doneN;
       return h("button", { class: "cat-card", style: { "--c": cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) },
         h("span", { class: "ico" }, cat.icon || "•"), h("span", { class: "nm" }, cat.text),
@@ -601,6 +613,48 @@ function renderToday(inner) {
         h("span", { class: "bar" }, h("i", { style: { width: (all.length ? Math.round(doneN / all.length * 100) : 0) + "%" } })));
     }), isMobile() ? h("button", { class: "cat-card new", onclick: () => openCategory(null) }, h("span", { class: "ico" }, icon("plus")), h("span", { class: "nm" }, "Nuova categoria")) : null));
   }
+}
+let selMonth = null;
+const thisMonth = () => today().slice(0, 7);
+const monthTotal = m => Object.values(items).reduce((a, x) => a + (x.parent && x.due_date && x.due_date.slice(0, 7) === m && x.amount ? x.amount : 0), 0);
+const addMonths = (m, n) => { const d = new Date(m + "-15T12:00"); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 7); };
+function renderSpese(inner) {
+  if (!selMonth) selMonth = thisMonth();
+  const [yy, mm] = selMonth.split("-").map(Number);
+  const spend = Object.values(items).filter(x => x.parent && x.amount > 0);
+  const inMonth = spend.filter(x => x.due_date && x.due_date.slice(0, 7) === selMonth);
+  const nodate = spend.filter(x => !x.due_date);
+  const total = inMonth.reduce((a, x) => a + x.amount, 0);
+  inner.append(h("div", { class: "sp-head" },
+    h("div", { class: "big-title" }, "Spese"),
+    h("div", { class: "sp-nav" }, h("button", { class: "icon-btn", onclick: () => { selMonth = addMonths(selMonth, -1); render(); } }, icon("back")),
+      h("span", null, cap(MESI[mm - 1]) + " " + yy),
+      h("button", { class: "icon-btn", onclick: () => { selMonth = addMonths(selMonth, 1); render(); } }, icon("chev")))));
+  inner.append(h("div", { class: "sp-total" }, h("span", null, "Totale del mese"), h("b", null, fmtEur(total))));
+  const block = (list, title) => {
+    const byCat = new Map();
+    for (const it of list) { const c = catOf(it.id); if (!c) continue; if (!byCat.has(c.id)) byCat.set(c.id, []); byCat.get(c.id).push(it); }
+    if (!byCat.size) return;
+    if (title) inner.append(h("div", { class: "group-h" }, title));
+    for (const [cid, arr] of [...byCat].sort((a, b) => b[1].reduce((x, y) => x + y.amount, 0) - a[1].reduce((x, y) => x + y.amount, 0))) {
+      const c = items[cid], col = c.color || COLORS[5];
+      const groups = new Map();
+      for (const it of arr) { const k = (pathOf(it.id) || c.text).split(" › ").slice(1).join(" › ") || "Generale"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+      const card = h("div", { class: "sp-cat", style: { "--c": col } },
+        h("div", { class: "sp-cat-h" }, h("span", { class: "ico" }, c.icon || "•"), h("span", { class: "nm" }, c.text), h("b", null, fmtEur(arr.reduce((a, x) => a + x.amount, 0)))));
+      for (const [k, g] of groups) {
+        card.append(h("div", { class: "sp-grp" }, h("span", null, k), h("b", null, fmtEur(g.reduce((a, x) => a + x.amount, 0)))));
+        g.sort(byDue).forEach(it => card.append(h("button", { class: "sp-row" + (it.done ? " done" : ""), onclick: () => openItem(it.id) },
+          h("span", { class: "t" }, it.text), h("span", { class: "d" }, it.due_date ? dayLabel(it.due_date) : ""), h("span", { class: "a" }, fmtEur(it.amount)))));
+      }
+      inner.append(card);
+    }
+  };
+  if (!inMonth.length) inner.append(h("div", { class: "empty" }, "Nessuna spesa con data in questo mese.", h("br"), "Apri una voce (ⓘ), scrivi la ", h("b", null, "Spesa"), " e dai una data."));
+  block(inMonth);
+  const open0 = Object.values(items).filter(x => x.parent && x.amount === 0 && !x.done && visible(x));
+  if (nodate.length) { const tn = nodate.reduce((a, x) => a + x.amount, 0); block(nodate, "Senza data · " + fmtEur(tn)); }
+  if (open0.length) inner.append(h("div", { class: "group-h" }, "Importo da definire"), panel(itemList(open0, { flat: true, path: true })));
 }
 function renderScheduled(inner) {
   inner.append(h("div", { class: "big-title" }, "Programmati"), h("p", { class: "page-sub" }, "Tutto quello che ha una scadenza, giorno per giorno"));
@@ -675,6 +729,8 @@ function openItem(id, opts = {}) {
         d.due_date && d.due_time ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Fine"), sw(!!d.due_end, v => { d.due_end = v ? hhmm(Math.min(1439, mins(d.due_time) + 60)) : null; draw(); })) : null,
         d.due_date && d.due_time && d.due_end ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_end, onchange: e => { const v = e.target.value; if (v && mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } })) : null),
       h("div", { class: "form-group" },
+        field(h("span", { class: "fi", style: { background: "var(--green)", fontWeight: 800, fontSize: "15px" } }, "€"), h("span", { class: "lab" }, "Spesa"),
+          h("input", { type: "text", inputmode: "decimal", class: "amt-in", placeholder: "0 = da definire", value: hasAmt(d) ? String(d.amount).replace(".", ",") : "", oninput: e => { const v = e.target.value.trim().replace(",", "."); d.amount = v === "" || !isFinite(Number(v)) ? null : Math.max(0, Number(v)); } })),
         field(fi("flag", "#e5484d"), h("span", { class: "lab" }, "Priorità"), h("div", { class: "seg" }, [["Nessuna", 0], ["Bassa", 1], ["Media", 2], ["Alta", 3]].map(([l, v]) => h("button", { class: (d.priority || 0) === v ? "on" : "", onclick: () => { d.priority = v; draw(); } }, l))))),
       d.due_date ? h("div", { class: "form-group" },
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),

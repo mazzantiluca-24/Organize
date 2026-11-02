@@ -17,7 +17,7 @@ let schemaOk = false;
 export async function ensureSchema(env) {
   if (schemaOk) return;
   const cols = (await env.DB.prepare("PRAGMA table_info(items)").all()).results.map(r => r.name);
-  const add = [["gcal_id", "TEXT"], ["gcal_updated", "TEXT"], ["gcal_sync_at", "TEXT"], ["gcal_span", "TEXT"], ["due_end", "TEXT"], ["gcal_src", "INTEGER NOT NULL DEFAULT 0"]];
+  const add = [["gcal_id", "TEXT"], ["gcal_updated", "TEXT"], ["gcal_sync_at", "TEXT"], ["gcal_span", "TEXT"], ["due_end", "TEXT"], ["amount", "REAL"], ["gcal_src", "INTEGER NOT NULL DEFAULT 0"]];
   for (const [c, t] of add) if (!cols.includes(c)) { try { await env.DB.prepare(`ALTER TABLE items ADD COLUMN ${c} ${t}`).run(); } catch (_) { /* creata in parallelo */ } }
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS items_gcal ON items(gcal_id)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS gcal_tomb (gcal_id TEXT PRIMARY KEY, remote INTEGER NOT NULL DEFAULT 1, at TEXT)").run();

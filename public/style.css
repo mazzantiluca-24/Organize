@@ -414,3 +414,25 @@ button.brand{cursor:pointer;border-radius:10px}
 }
 .m-search-bar{padding-right:2px}.m-cancel{white-space:nowrap}
 .wk-desk{touch-action:pan-y}
+
+/* ---------- spese ---------- */
+.eur{color:var(--green);font-weight:650;font-variant-numeric:tabular-nums}
+.eur.tot{background:color-mix(in srgb,var(--green) 14%,transparent);padding:1px 7px;border-radius:8px}
+.amt-in{text-align:right;max-width:150px;font-size:16px}
+.cats.spese-entry{margin-bottom:10px}
+.sp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.sp-head .big-title{margin:0}
+.sp-nav{display:flex;align-items:center;gap:2px;font-weight:600;font-size:15px}
+.sp-total{display:flex;align-items:baseline;justify-content:space-between;padding:16px 18px;border-radius:16px;margin-bottom:16px;background:color-mix(in srgb,var(--green) 13%,transparent);color:var(--green)}
+.sp-total span{font-size:14px;font-weight:650}.sp-total b{font-size:32px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sp-cat{background:var(--bg2);box-shadow:var(--shadow);border-radius:16px;padding:6px 0 8px;margin-bottom:12px}
+.sp-cat-h{display:flex;align-items:center;gap:10px;padding:10px 14px 6px}
+.sp-cat-h .ico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 16%,transparent)}
+.sp-cat-h .nm{flex:1;font-weight:700;font-size:16px}.sp-cat-h b{font-size:17px;font-variant-numeric:tabular-nums}
+.sp-grp{display:flex;justify-content:space-between;padding:8px 14px 2px;font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--label2)}
+.sp-grp b{font-variant-numeric:tabular-nums}
+.sp-row{display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;padding:7px 14px;font-size:15px}
+.sp-row:hover{background:var(--fill2)}
+.sp-row .t{flex:1;min-width:0}.sp-row .d{font-size:12px;color:var(--label2)}.sp-row .a{font-variant-numeric:tabular-nums;font-weight:600}
+.sp-row.done .t{text-decoration:line-through;color:var(--label2)}
+.cat-card .ico:not(:empty){font-weight:800}

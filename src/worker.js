@@ -35,7 +35,7 @@ async function isAuthed(req, env) {
 const cookie = v => `s=${v}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${365 * 86400}`;
 
 // ---------- items ----------
-const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "due_end", "remind", "repeat", "notes", "color", "icon", "priority"];
+const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "due_end", "amount", "remind", "repeat", "notes", "color", "icon", "priority"];
 function clean(it) {
   const s = v => (v === undefined || v === null || v === "" ? null : String(v).slice(0, 5000));
   return {
@@ -48,6 +48,7 @@ function clean(it) {
     due_date: /^\d{4}-\d{2}-\d{2}$/.test(it.due_date || "") ? it.due_date : null,
     due_time: /^\d{2}:\d{2}$/.test(it.due_time || "") ? it.due_time : null,
     due_end: /^\d{2}:\d{2}$/.test(it.due_end || "") && /^\d{2}:\d{2}$/.test(it.due_time || "") && it.due_end > it.due_time ? it.due_end : null,
+    amount: it.amount === null || it.amount === undefined || it.amount === "" || !Number.isFinite(Number(it.amount)) ? null : Math.round(Number(it.amount) * 100) / 100,
     priority: [1, 2, 3].includes(Number(it.priority)) ? Number(it.priority) : 0,
     remind: s(it.remind), repeat: s(it.repeat), notes: s(it.notes), color: s(it.color), icon: s(it.icon),
   };
