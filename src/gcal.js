@@ -106,16 +106,51 @@ function evWhen(tz, ev, now) {
   return { date: p.date, time: p.time, span: "m" + Math.max(5, Math.round((em - sm) / 60000)), ms: sm, past: em < now };
 }
 
-async function ensureCategory(env) {
+export async function ensureCategory(env) {
   if (await env.DB.prepare("SELECT 1 FROM items WHERE id = ?").bind(CAT_ID).first()) return;
   const m = (await env.DB.prepare("SELECT COALESCE(MAX(ord), 0) AS m FROM items WHERE parent = ''").first()).m;
-  await env.DB.prepare("INSERT OR IGNORE INTO items (id, parent, text, ord, color, icon, updated_at) VALUES (?, '', 'Google Calendar', ?, '#007aff', '📅', ?)").bind(CAT_ID, m + 1, nowIso()).run();
+  await env.DB.prepare("INSERT OR IGNORE INTO items (id, parent, text, ord, color, icon, updated_at) VALUES (?, '', 'Calendario', ?, '#007aff', '📅', ?)").bind(CAT_ID, m + 1, nowIso()).run();
 }
-async function removeLocal(env, ex) {
+export async function removeLocal(env, ex) {
   const kids = (await env.DB.prepare("SELECT COUNT(*) AS n FROM items WHERE parent = ?").bind(ex.id).first()).n;
   if (!kids) await env.DB.prepare("DELETE FROM items WHERE id = ?").bind(ex.id).run();
   else await env.DB.prepare("UPDATE items SET gcal_id = NULL, gcal_updated = NULL, gcal_sync_at = NULL, due_date = NULL, due_time = NULL, remind_at = NULL, updated_at = ? WHERE id = ?").bind(nowIso(), ex.id).run();
 }
+
+// Applica un evento remoto (già normalizzato) alle voci di Organize. Usata anche dal collegamento iCloud.
+export async function applyEvent(env, tz, now, n, byG, tomb, st) {
+  const ex = byG[n.id];
+  if (n.cancelled) { if (ex) await removeLocal(env, ex); return; }
+  if (tomb.has(n.id)) return;
+  const w = n.w; if (!w) return;
+  const lateCut = new Date(now - 2 * 60000).toISOString();
+  let text = String(n.summary || "").trim(), tick = false;
+  if (text.startsWith("✓ ")) { text = text.slice(2).trim(); tick = true; }
+  text = (text || "(senza titolo)").slice(0, 500);
+  const notes = n.notes ? String(n.notes).slice(0, 5000) : null;
+  const stamp = nowIso();
+  if (ex) {
+    if (ex.gcal_updated === n.updated) return;                                                         // è l'eco di quello che abbiamo appena mandato noi
+    if (ex.updated_at !== ex.gcal_sync_at && Date.parse(ex.updated_at) > Date.parse(n.updatedAt || 0)) return;   // in Organize è più recente: vince Organize
+    const done = ex.gcal_src ? (w.past ? 1 : ex.done) : (tick ? 1 : 0);
+    const remindAt = done ? null : computeRemindAt(tz, { due_date: w.date, due_time: w.time, remind: ex.remind });
+    await env.DB.prepare(`UPDATE items SET text = ?, notes = ?, due_date = ?, due_time = ?, done = ?, remind_at = ?,
+        notified_at = CASE WHEN remind_at IS ? THEN notified_at ELSE ? END, updated_at = ?, gcal_updated = ?, gcal_sync_at = ?, gcal_span = ? WHERE id = ?`)
+      .bind(text, notes, w.date, w.time, done, remindAt, remindAt, remindAt && remindAt < lateCut ? stamp : null, stamp, n.updated || null, stamp, w.span, ex.id).run();
+    return;
+  }
+  const oid = n.organizeId;
+  if (oid) {   // evento nato da Organize ma non ancora collegato (es. interruzione a metà): lo ricollego, il prossimo giro lo allinea
+    const own = await env.DB.prepare("SELECT id FROM items WHERE id = ? AND gcal_id IS NULL").bind(oid).first();
+    if (own) { await env.DB.prepare("UPDATE items SET gcal_id = ?, gcal_updated = ?, gcal_sync_at = NULL WHERE id = ?").bind(n.id, n.updated || null, oid).run(); return; }
+    if (await env.DB.prepare("SELECT 1 FROM items WHERE id = ?").bind(oid).first()) return;
+  }
+  if (!st.catOk) { await ensureCategory(env); st.catOk = true; }
+  await env.DB.prepare(`INSERT INTO items (id, parent, text, ord, done, collapsed, due_date, due_time, notes, priority, updated_at, gcal_id, gcal_updated, gcal_sync_at, gcal_span, gcal_src)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1)`)
+    .bind(rand(9), CAT_ID, text, w.ms / 1e6, w.past ? 1 : 0, w.date, w.time, notes, stamp, n.id, n.updated || null, stamp, w.span).run();
+}
+
 
 // ---------- Google → Organize ----------
 async function pull(env, tz, forceFull) {
@@ -135,39 +170,12 @@ async function pull(env, tz, forceFull) {
   }
   const byG = Object.fromEntries((await env.DB.prepare("SELECT id, text, done, remind, updated_at, gcal_id, gcal_updated, gcal_sync_at, gcal_src FROM items WHERE gcal_id IS NOT NULL").all()).results.map(r => [r.gcal_id, r]));
   const tomb = new Set((await env.DB.prepare("SELECT gcal_id FROM gcal_tomb").all()).results.map(r => r.gcal_id));
-  const lateCut = new Date(now - 2 * 60000).toISOString();
-  let catOk = false;
+  const st = { catOk: false };
   for (const ev of evs) {
     if (!ev.id) continue;
-    const ex = byG[ev.id];
-    if (ev.status === "cancelled") { if (ex) await removeLocal(env, ex); continue; }
-    if (tomb.has(ev.id)) continue;
-    const w = evWhen(tz, ev, now); if (!w) continue;
-    let text = String(ev.summary || "").trim(), tick = false;
-    if (text.startsWith("✓ ")) { text = text.slice(2).trim(); tick = true; }
-    text = (text || "(senza titolo)").slice(0, 500);
-    const notes = ev.description ? String(ev.description).slice(0, 5000) : null;
-    const stamp = nowIso();
-    if (ex) {
-      if (ex.gcal_updated === ev.updated) continue;                                                       // è l'eco di quello che abbiamo appena mandato noi
-      if (ex.updated_at !== ex.gcal_sync_at && Date.parse(ex.updated_at) > Date.parse(ev.updated || 0)) continue;   // in Organize è più recente: vince Organize
-      const done = ex.gcal_src ? (w.past ? 1 : ex.done) : (tick ? 1 : 0);
-      const remindAt = done ? null : computeRemindAt(tz, { due_date: w.date, due_time: w.time, remind: ex.remind });
-      await env.DB.prepare(`UPDATE items SET text = ?, notes = ?, due_date = ?, due_time = ?, done = ?, remind_at = ?,
-          notified_at = CASE WHEN remind_at IS ? THEN notified_at ELSE ? END, updated_at = ?, gcal_updated = ?, gcal_sync_at = ?, gcal_span = ? WHERE id = ?`)
-        .bind(text, notes, w.date, w.time, done, remindAt, remindAt, remindAt && remindAt < lateCut ? stamp : null, stamp, ev.updated || null, stamp, w.span, ex.id).run();
-      continue;
-    }
-    const oid = ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.organizeId;
-    if (oid) {   // evento nato da Organize ma non ancora collegato (es. interruzione a metà): lo ricollego, il prossimo giro lo allinea
-      const own = await env.DB.prepare("SELECT id FROM items WHERE id = ? AND gcal_id IS NULL").bind(oid).first();
-      if (own) { await env.DB.prepare("UPDATE items SET gcal_id = ?, gcal_updated = ?, gcal_sync_at = NULL WHERE id = ?").bind(ev.id, ev.updated || null, oid).run(); continue; }
-      if (await env.DB.prepare("SELECT 1 FROM items WHERE id = ?").bind(oid).first()) continue;
-    }
-    if (!catOk) { await ensureCategory(env); catOk = true; }
-    await env.DB.prepare(`INSERT INTO items (id, parent, text, ord, done, collapsed, due_date, due_time, notes, priority, updated_at, gcal_id, gcal_updated, gcal_sync_at, gcal_span, gcal_src)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1)`)
-      .bind(rand(9), CAT_ID, text, w.ms / 1e6, w.past ? 1 : 0, w.date, w.time, notes, stamp, ev.id, ev.updated || null, stamp, w.span).run();
+    const cancelled = ev.status === "cancelled";
+    await applyEvent(env, tz, now, { id: ev.id, updated: ev.updated, cancelled, summary: ev.summary, notes: ev.description, w: cancelled ? null : evWhen(tz, ev, now),
+      updatedAt: ev.updated, organizeId: ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.organizeId }, byG, tomb, st);
   }
   // gli eventi di Google già passati non sono "scadenze": li segno come fatti, senza mandarli a Google
   await env.DB.prepare("UPDATE items SET done = 1 WHERE gcal_src = 1 AND done = 0 AND due_date IS NOT NULL AND due_date < ?").bind(localParts(tz, now).date).run();
@@ -235,7 +243,7 @@ async function push(env, tz) {
 }
 
 // ---------- un giro completo ----------
-async function lock(env) {
+export async function lock(env) {
   const now = Date.now();
   await env.DB.prepare("INSERT OR IGNORE INTO settings (k, v) VALUES ('g_lock', '0')").run();
   const r = await env.DB.prepare("UPDATE settings SET v = ? WHERE k = 'g_lock' AND CAST(v AS INTEGER) < ?").bind(String(now + 90000), now).run();

@@ -35,7 +35,7 @@ r = await call("/api/google/callback?code=abc&state=" + encodeURIComponent(state
 await new Promise(r => setTimeout(r, 2500));
 const s1 = await jget("/api/settings"); ok(s1.google.connected && s1.google.email === "luca@example.com", "collegato come " + s1.google.email);
 let all = await items();
-const cat = all.find(i => i.id === "cat-gcal"); ok(cat && cat.text === "Google Calendar", "categoria Google Calendar creata");
+const cat = all.find(i => i.id === "cat-gcal"); ok(cat && cat.text === "Calendario", "categoria Google Calendar creata");
 const dent = await byText("Dentista"); ok(dent && dent.parent === "cat-gcal" && dent.due_time && dent.notes === "portare tessera" && !dent.done, "Dentista importato con ora e note: " + JSON.stringify(dent && [dent.due_date, dent.due_time]));
 const comp = await byText("Compleanno Anna"); ok(comp && comp.due_date === day(3) && !comp.due_time, "Compleanno importato (tutto il giorno)");
 const past = await byText("Riunione passata"); ok(past && past.done === 1, "evento passato importato come fatto");

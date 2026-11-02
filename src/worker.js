@@ -1,6 +1,7 @@
 import { generateVapid, sendPush, b64u } from "./webpush.js";
 import { enc, nowIso, rand, getSetting, setSetting, ensureSetting, sign, localToUtc, computeRemindAt } from "./util.js";
 import * as G from "./gcal.js";
+import * as C from "./caldav.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
@@ -181,12 +182,19 @@ async function api(req, env, url, ctx) {
     const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")} FROM items`).all()).results;
     return json({ items: rows });
   }
-  if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(G.run(env, { pushOnly: true })); return json({ ok: true }); }
+  if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(Promise.all([G.run(env, { pushOnly: true }), C.run(env, { pushOnly: true })])); return json({ ok: true }); }
   if (p === "/api/settings" && m === "GET") {
     const calToken = await ensureSetting(env, "cal_token", () => rand(18));
     const devices = (await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subs").first()).n;
-    return json({ vapidKey: (await vapid(env)).publicKey, calendarUrl: `${url.origin}/cal/${calToken}.ics`, tz: (await getSetting(env, "tz")) || "Europe/Rome", devices, google: await G.status(env, url) });
+    return json({ vapidKey: (await vapid(env)).publicKey, calendarUrl: `${url.origin}/cal/${calToken}.ics`, tz: (await getSetting(env, "tz")) || "Europe/Rome", devices, google: await G.status(env, url), caldav: await C.status(env) });
   }
+  if (p === "/api/caldav/connect" && m === "POST") {
+    try { await C.connect(env, body); } catch (e) { return json({ error: e.message }, 400); }
+    ctx.waitUntil(C.run(env, { full: true }));
+    return json({ ok: true });
+  }
+  if (p === "/api/caldav/sync" && m === "POST") return json(await C.run(env, { full: true }));
+  if (p === "/api/caldav/disconnect" && m === "POST") { await C.disconnect(env); return json({ ok: true }); }
   if (p === "/api/google/config" && m === "POST") {
     try { await G.saveConfig(env, body); } catch (e) { return json({ error: e.message }, 400); }
     return json({ ok: true });
@@ -242,6 +250,6 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await G.ensureSchema(env).catch(e => console.log("schema", e.message));
-    ctx.waitUntil(Promise.all([runReminders(env), G.run(env)]));
+    ctx.waitUntil(Promise.all([runReminders(env), G.run(env), C.run(env)]));
   },
 };

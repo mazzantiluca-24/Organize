@@ -721,16 +721,38 @@ async function openSettings() {
     h("div", { class: "form-group-title" }, "Avvisi"), pushGroup, status,
     h("div", { class: "form-group-title" }, "App su Mac"),
     h("div", { class: "form-note", style: { margin: "0 0 20px" } }, "Per averla come un'app a sé, a schermo intero e con la sua icona: in Safari scegli ", h("b", null, "File › Aggiungi al Dock"), ". Nel menu di Chrome: ", h("b", null, "Salva e condividi › Installa Organize"), "."),
-    h("div", { class: "form-group-title" }, "Google Calendar"), ...googleBlock(s.google),
+    h("div", { class: "form-group-title" }, "Calendario iCloud (Mac e iPhone)"), ...caldavBlock(s.caldav),
+    h("div", { class: "form-group-title" }, "Google Calendar (alternativa)"), ...googleBlock(s.google),
     h("div", { class: "form-group-title" }, "Calendario Apple / altri"),
     h("div", { class: "form-group" },
       h("a", { class: "field btn", href: s.calendarUrl.replace(/^https?:/, "webcal:"), style: { textDecoration: "none" } }, h("span", { class: "lab" }, "Aggiungi al Calendario Apple")),
       h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
-    h("div", { class: "form-note" }, "Premi il pulsante da Safari e conferma ", h("i", null, "Iscriviti"), ": le voci con data compaiono nel Calendario Apple, con gli avvisi scelti. ", h("b", null, "Se hai collegato Google qui sopra non serve"), ": vedresti ogni voce due volte (se hai già aggiunto questo indirizzo a Google Calendar, toglilo)."),
+    h("div", { class: "form-note" }, "Premi il pulsante da Safari e conferma ", h("i", null, "Iscriviti"), ": le voci con data compaiono nel Calendario Apple, con gli avvisi scelti. ", h("b", null, "Se hai collegato iCloud o Google qui sopra non serve"), ": vedresti ogni voce due volte (se hai già aggiunto questo indirizzo a Google Calendar, toglilo)."),
     h("div", { class: "form-group-title" }, "Account"),
     h("div", { class: "form-group" },
       h("button", { class: "field btn", onclick: changePassword }, "Cambia password"),
       h("button", { class: "field btn danger", onclick: async () => { await api("/api/logout", {}).catch(() => {}); localStorage.clear(); location.reload(); } }, "Esci")));
+}
+function caldavBlock(c) {
+  const note = h("div", { class: "form-note" });
+  const link = (href, t) => h("a", { href, target: "_blank", rel: "noopener" }, t);
+  if (c.connected) {
+    const when = c.lastSync ? new Date(c.lastSync).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+    note.textContent = c.error ? "⚠️ " + c.error : "Le voci con data finiscono nel calendario «Organize», gli eventi dei tuoi calendari arrivano qui nella categoria «Calendario». Si aggiorna da solo" + (when ? " (ultimo controllo alle " + when + ")." : ".");
+    return [h("div", { class: "form-group" },
+      field(fi("cal", "var(--green)"), h("span", { class: "lab" }, "Collegato ✓ " + c.user)),
+      h("button", { class: "field btn", onclick: async () => { note.textContent = "Sincronizzo…"; try { const r = await api("/api/caldav/sync", {}); note.textContent = r.ok ? "Fatto ✓" : "⚠️ " + (r.error || "Errore"); pull().catch(() => {}); } catch (e) { note.textContent = e.message; } } }, h("span", { class: "lab" }, "Sincronizza adesso")),
+      h("button", { class: "field btn danger", onclick: () => confirmSheet("Le voci già sincronizzate restano sia qui sia nel Calendario; smettono solo di seguirsi.", "Scollega iCloud", async () => { await api("/api/caldav/disconnect", {}); openSettings(); }) }, h("span", { class: "lab" }, "Scollega iCloud"))), note];
+  }
+  const idI = h("input", { type: "text", placeholder: "ID Apple (la tua email)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+  const pwI = h("input", { type: "password", placeholder: "Password per app (xxxx-xxxx-xxxx-xxxx)", autocomplete: "off" });
+  const go = async () => { note.textContent = "Collego…"; try { await api("/api/caldav/connect", { appleId: idI.value, password: pwI.value }); toast("iCloud collegato ✓"); openSettings(); } catch (e) { note.textContent = "⚠️ " + e.message; } };
+  const steps = h("ol", { class: "g-steps" },
+    h("li", null, "Apri ", link("https://account.apple.com", "account.apple.com"), " e accedi › ", h("b", null, "Accesso e sicurezza"), " › ", h("b", null, "Password per app"), " › ", h("b", null, "+"), ". Chiamala ", h("i", null, "Organize"), " e copia la password che ti dà."),
+    h("li", null, "Nel Calendario del Mac: ", h("b", null, "File › Nuovo calendario › iCloud"), " e chiamalo ", h("b", null, "Organize"), ". Qui finiranno le tue voci."),
+    h("li", null, "Scrivi qui sotto il tuo ID Apple, incolla la password e premi ", h("b", null, "Collega iCloud"), "."));
+  return [h("details", { class: "g-guide", open: "" }, h("summary", null, "Come si prepara (3 minuti, una volta sola)"), steps),
+    h("div", { class: "form-group" }, field(idI), field(pwI), h("button", { class: "field btn", onclick: go }, fi("cal", "var(--blue)"), h("span", { class: "lab" }, "Collega iCloud"))), note];
 }
 function googleBlock(g) {
   const note = h("div", { class: "form-note" });
