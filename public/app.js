@@ -251,7 +251,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("div", { class: "brand", title: "Organize" }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go(isMobile() ? "home" : "today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -370,21 +370,20 @@ function outdent(id) {
 }
 function addRow(parent, ph, extra) {
   const inp = h("input", { type: "text", placeholder: ph, "data-add": parent, enterkeyhint: "done" });
+  const submit = () => {
+    const v = inp.value.trim(); if (!v) { inp.focus(); return; }
+    const target = typeof extra === "function" ? extra() : { parent, extra: {} };
+    const n = mkItem(target.parent, v, target.extra); if (extra) toast("Aggiunto in " + (pathOf(n.id) || "categoria"));
+    focusReq = { id: parent, sel: "add" }; commit();
+  };
   inp.addEventListener("keydown", e => {
     if (e.isComposing) return;
-    if (e.key === "Enter") { e.preventDefault(); const v = inp.value.trim(); if (!v) { addingUnder = null; render(); return; }
-      const target = typeof extra === "function" ? extra() : { parent, extra: {} };
-      const n = mkItem(target.parent, v, target.extra); if (extra) toast("Aggiunto in " + (pathOf(n.id) || "categoria"));
-      focusReq = { id: parent, sel: "add" }; commit(); }
+    if (e.key === "Enter") { e.preventDefault(); if (!inp.value.trim()) { addingUnder = null; render(); return; } submit(); }
     if (e.key === "Escape") { addingUnder = null; render(); }
   });
   inp.addEventListener("blur", () => { if (!inp.value.trim() && addingUnder === parent) setTimeout(() => { if (addingUnder === parent && !document.activeElement.matches("[data-add]")) { addingUnder = null; render(); } }, 150); });
-  let picker = null;
-  if (extra && cats().length) {
-    picker = h("select", { class: "cat-pick", title: "Categoria", onchange: () => lsSet("quickCat", picker.value) }, cats().map(c => h("option", { value: c.id }, (c.icon ? c.icon + " " : "") + c.text)));
-    picker.value = ensureInbox();
-  }
-  return h("li", null, h("label", { class: "add-row" }, h("span", { class: "plus" }, icon("plus")), inp, picker));
+  const ok = extra ? h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check")) : null;
+  return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp, ok));
 }
 
 // ---------- views ----------
@@ -461,6 +460,12 @@ function dayParts(d, dated, s0, e0, idx) {
       h("span", { class: "wk-tm" }, it.due_time), " ", iconOfIt(it) ? iconOfIt(it) + " " : "", it.text);
     dnd(b); col.append(b);
   });
+  col.addEventListener("dblclick", e => {
+    if (e.target.closest(".tl-ev")) return;
+    const y = e.clientY - col.getBoundingClientRect().top;
+    newAt(d, hhmm(Math.max(0, Math.min(23 * 60 + 30, Math.floor(((y / ROW + s0) * 60) / 30) * 30))));
+  });
+  allday.addEventListener("dblclick", e => { if (!e.target.closest("button")) newAt(d, null); });
   if (d === t) { const n = new Date(), m = n.getHours() * 60 + n.getMinutes(); if (m / 60 >= s0 && m / 60 <= e0) col.append(h("div", { class: "tl-now", style: { top: ((m / 60 - s0) * ROW) + "px" } })); }
   col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drop"); });
   col.addEventListener("dragleave", () => col.classList.remove("drop"));
@@ -471,6 +476,10 @@ function dayParts(d, dated, s0, e0, idx) {
     moveItem(e.dataTransfer.getData("text/plain"), d, hhmm(m));
   });
   return { head, allday, col, count: list.filter(x => !x.done).length + late.length, total: list.length + late.length };
+}
+function newAt(date, time) {   // doppio clic sulla settimana: scheda per un nuovo promemoria, creato solo con Conferma
+  const it = { id: uid(), parent: ensureInbox(), text: "", ord: 0, done: false, collapsed: false, due_date: date, due_time: time, remind: time ? "15m" : "morning", repeat: null, notes: null, color: null, icon: null, priority: 0 };
+  it.ord = nextOrd(it.parent); openItem(it.id, { draft: it });
 }
 function axis(s0, e0) {
   const a = h("div", { class: "tl-axis", style: { height: (e0 - s0) * ROW + "px" } });
@@ -595,8 +604,9 @@ const fi = (ic, bg) => h("span", { class: "fi", style: { background: bg } }, ico
 const sw = (checked, onchange) => { const i = h("input", { type: "checkbox" }); i.checked = checked; i.onchange = () => onchange(i.checked); return h("label", { class: "switch" }, i, h("span")); };
 const select = (opts, val, onchange) => { const s = h("select", { onchange: () => onchange(s.value) }, Object.entries(opts).map(([k, v]) => h("option", { value: k }, v))); s.value = val; return s; };
 
-function openItem(id) {
-  const it = items[id]; if (!it) return;
+function openItem(id, opts = {}) {
+  const fresh = !!opts.draft;
+  const it = opts.draft || items[id]; if (!it) return;
   const d = { ...it };
   const body = h("div");
   const draw = () => {
@@ -604,6 +614,8 @@ function openItem(id) {
       h("div", { class: "form-group" },
         field(h("input", { type: "text", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
         field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || ""))),
+      h("div", { class: "form-group" },
+        field(fi("list", "#8e8e93"), h("span", { class: "lab" }, "Categoria"), select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), fresh ? it.parent : (catOf(id) || {}).id, v => { const cur = fresh ? it.parent : (catOf(id) || {}).id; if (v === cur) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } }))),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
           sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; } draw(); })),
@@ -617,20 +629,21 @@ function openItem(id) {
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),
         field(fi("repeat", "#8e8e93"), h("span", { class: "lab" }, "Ripeti"), select(REPEAT, d.repeat || "", v => d.repeat = v || null))) : null,
       d.due_date ? h("div", { class: "form-note" }, "L'avviso arriva sui dispositivi dove hai attivato le notifiche (Impostazioni ⚙︎).") : null,
-      h("div", { class: "form-group" },
+      fresh ? null : h("div", { class: "form-group" },
         h("button", { class: "field btn", onclick: () => { save(); pickParent(id); } }, h("span", { class: "lab" }, "Sposta in…"), h("span", { style: { color: "var(--label2)", fontSize: "15px" } }, pathOf(id))),
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); duplicate(id); } }, "Duplica"),
         h("button", { class: "field btn", onclick: () => { save(); closeSheet(); addingUnder = id; it.collapsed = false; if (route.v !== "cat" || catOf(id).id !== route.id) go("c-" + catOf(id).id); focusReq = { id, sel: "add" }; render(); } }, "Aggiungi sotto-voce")),
     );
   };
-  const save = () => { Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_date) { it.due_time = null; it.remind = null; it.repeat = null; } commit(); };
+  const save = () => { if (fresh) { if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; } items[it.id] = it; } Object.assign(it, d, { text: (d.text || "").trim() || it.text, notes: (d.notes || "").trim() || null }); if (!it.due_date) { it.due_time = null; it.remind = null; it.repeat = null; } commit(); };
   draw();
-  const del = () => { const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); };
+  const del = () => { if (fresh) { closeSheet(); return; } const n = desc(id).length; confirmSheet(n ? `Eliminare “${it.text}” e ${n} sotto-voci?` : `Eliminare “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); };
   const actions = h("div", { class: "sheet-actions" },
     h("button", { class: "act red", onclick: del }, "Elimina"),
     h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
-    h("button", { class: "act green", onclick: () => { save(); closeSheet(); } }, "Conferma"));
+    h("button", { class: "act green", onclick: () => { if (save() !== false) closeSheet(); } }, "Conferma"));
   openSheet(head("Dettagli"), body, actions);
+  if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
 }
 function duplicate(id) {
   const src = items[id]; const sib = kids(src.parent); const i = sib.findIndex(x => x.id === id);
