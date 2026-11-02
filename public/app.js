@@ -856,7 +856,7 @@ function pickParent(id) {
 }
 function openCategory(id) {
   const cat = id ? items[id] : null;
-  const d = cat ? { text: cat.text, color: cat.color || COLORS[5], icon: cat.icon || "" } : { text: "", color: COLORS[5], icon: "📋" };
+  const d = cat ? { text: cat.text, color: cat.color || COLORS[5], icon: cat.icon || "" } : { text: "", color: freeColor(), icon: "📋" };
   const prev = h("span", { class: "big" }); const nameI = h("input", { type: "text", value: d.text, placeholder: "Nome categoria", oninput: e => d.text = e.target.value });
   const colors = h("div", { class: "colors" }), emojis = h("div", { class: "emojis" });
   const draw = () => {
@@ -1029,10 +1029,21 @@ function showAuth(setup) {
 }
 
 // ================= boot =================
+// ogni categoria ha un colore diverso dalle altre: se due coincidono, assegno automaticamente il primo colore libero
+const freeColor = () => { const used = new Set(cats().map(c => c.color || COLORS[5])); return COLORS.find(c => !used.has(c)) || COLORS[5]; };
+function distinctCatColors() {
+  const used = new Set(); let changed = false;
+  for (const cat of cats()) {
+    let c = cat.color || COLORS[5];
+    if (used.has(c)) { const f = COLORS.find(x => !used.has(x)); if (f) { cat.color = c = f; changed = true; } }
+    used.add(c);
+  }
+  return changed;
+}
 async function start() {
   items = lsGet("items", {}); synced = lsGet("synced", {}); showDone = lsGet("showDone", false);
   route = parseHash(); render();
-  try { await pull(); route = parseHash(); render(); } catch (_) { setSync("err"); }
+  try { await pull(); route = parseHash(); if (distinctCatColors()) commit(false); render(); } catch (_) { setSync("err"); }
   const gq = new URLSearchParams(location.search).get("google");
   if (gq) {
     history.replaceState(null, "", location.pathname + location.hash);
