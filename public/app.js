@@ -819,9 +819,7 @@ function openList(id, opts = {}) {
   };
   body.append(
     h("div", { class: "form-group" },
-      field(h("input", { type: "text", value: d.text, placeholder: "Titolo della lista", oninput: e => d.text = e.target.value })),
-      field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes)),
-      field(h("span", { class: "lab" }), catSel)),
+      field(h("input", { type: "text", value: d.text, placeholder: "Titolo della lista", oninput: e => d.text = e.target.value }), catSel)),
     h("div", { class: "form-group" },
       field(h("span", { class: "fi", style: { background: "var(--green)", fontWeight: 800, fontSize: "15px" } }, "€"), h("span", { class: "lab" }, "Spesa"), spEl),
       field(h("span", { class: "fi", style: { background: "var(--orange)", fontWeight: 800, fontSize: "15px" } }, "?"), h("span", { class: "lab" }, "Preventivo"), pvEl)),
