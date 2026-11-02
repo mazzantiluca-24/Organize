@@ -413,3 +413,4 @@ button.brand{cursor:pointer;border-radius:10px}
   .tl-ev .wk-tm{font-size:10px}
 }
 .m-search-bar{padding-right:2px}.m-cancel{white-space:nowrap}
+.wk-desk{touch-action:pan-y}

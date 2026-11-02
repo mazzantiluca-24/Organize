@@ -554,6 +554,15 @@ function weekBoard(dated) {
       h("span", { class: "wk-bar" }, h("i", { style: { width: (total ? Math.round(doneN / total * 100) : 0) + "%" } })));
   }));
   const mob = h("div", { class: "wk-mob" }, strip, h("div", { class: "wk-mday" }, sp.allday, timed.length ? h("div", { class: "tl-wrap" }, axis(ms, me), sp.col) : null));
+  // iPhone: scorri col dito a sinistra/destra per cambiare giorni
+  let sx = 0, sy = 0, st = 0;
+  desk.addEventListener("touchstart", e => { const t0 = e.touches[0]; sx = t0.clientX; sy = t0.clientY; st = Date.now(); }, { passive: true });
+  desk.addEventListener("touchend", e => {
+    if (!isMobile()) return;
+    const t1 = e.changedTouches[0], dx = t1.clientX - sx, dy = t1.clientY - sy;
+    if (Date.now() - st > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    wkStart = addDays(wkStart, dx < 0 ? N : -N); selDay = wkStart; render();
+  }, { passive: true });
   return h("div", { class: "wk", style: { "--row": ROW + "px" } },
     h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, h("span", { class: "t-long" }, longLabel), h("span", { class: "t-short" }, label)),
       h("div", { class: "wk-nav" },
