@@ -379,3 +379,5 @@ ul.items ul.items .add-row .plus{width:18px;height:18px}
 .add-ok svg{width:14px;height:14px;stroke-width:3.2}
 button.brand{cursor:pointer;border-radius:10px}
 .tl-col,.wk-allday{cursor:cell}
+
+.tl-col,.wk-allday{touch-action:manipulation}

@@ -382,7 +382,7 @@ function addRow(parent, ph, extra) {
     if (e.key === "Escape") { addingUnder = null; render(); }
   });
   inp.addEventListener("blur", () => { if (!inp.value.trim() && addingUnder === parent) setTimeout(() => { if (addingUnder === parent && !document.activeElement.matches("[data-add]")) { addingUnder = null; render(); } }, 150); });
-  const ok = extra ? h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check")) : null;
+  const ok = h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check"));
   return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp, ok));
 }
 
@@ -461,12 +461,17 @@ function dayParts(d, dated, s0, e0, idx) {
       h("span", { class: "wk-tm" }, it.due_time + (durOf(it) ? "–" + it.due_end : "")), " ", iconOfIt(it) ? iconOfIt(it) + " " : "", it.text);
     dnd(b); col.append(b);
   });
-  col.addEventListener("dblclick", e => {
+  const dbl = (el, fn) => {   // doppio clic col mouse, doppio tocco sull'iPhone (Safari non sempre manda "dblclick")
+    let last = 0, lx = 0, ly = 0, fired = 0;
+    el.addEventListener("dblclick", e => { if (Date.now() - fired > 700) fn(e); });
+    el.addEventListener("pointerup", e => { if (e.pointerType !== "touch") return; const n = Date.now(); if (n - last < 350 && Math.abs(e.clientX - lx) < 24 && Math.abs(e.clientY - ly) < 24) { last = 0; fired = n; e.preventDefault(); fn(e); } else { last = n; lx = e.clientX; ly = e.clientY; } });
+  };
+  dbl(col, e => {
     if (e.target.closest(".tl-ev")) return;
     const y = e.clientY - col.getBoundingClientRect().top;
     newAt(d, hhmm(Math.max(0, Math.min(23 * 60 + 30, Math.floor(((y / ROW + s0) * 60) / 30) * 30))));
   });
-  allday.addEventListener("dblclick", e => { if (!e.target.closest("button")) newAt(d, null); });
+  dbl(allday, e => { if (!e.target.closest("button")) newAt(d, null); });
   if (d === t) { const n = new Date(), m = n.getHours() * 60 + n.getMinutes(); if (m / 60 >= s0 && m / 60 <= e0) col.append(h("div", { class: "tl-now", style: { top: ((m / 60 - s0) * ROW) + "px" } })); }
   col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drop"); });
   col.addEventListener("dragleave", () => col.classList.remove("drop"));
@@ -501,7 +506,7 @@ function weekBoard(dated) {
     h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
   // iPhone: week strip with counts + the selected day with its hours
   const dayList = dated.filter(x => x.due_date === selDay);
-  const timed = dayList.filter(x => x.due_time).map(x => +x.due_time.slice(0, 2));
+  const timed = dayList.filter(x => x.due_time).flatMap(x => [+x.due_time.slice(0, 2), Math.ceil((mins(x.due_time) + durOf(x)) / 60)]);
   const nowH = selDay === t ? new Date().getHours() : null;
   if (nowH !== null && timed.length) timed.push(nowH);
   const ms = timed.length ? Math.max(0, Math.min(...timed) - 1) : 8;
