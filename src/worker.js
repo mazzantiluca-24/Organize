@@ -1,22 +1,10 @@
 import { generateVapid, sendPush, b64u } from "./webpush.js";
+import { enc, nowIso, rand, getSetting, setSetting, ensureSetting, sign, localToUtc, computeRemindAt } from "./util.js";
+import * as G from "./gcal.js";
 
-const enc = new TextEncoder();
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
-const nowIso = () => new Date().toISOString();
-const rand = (n = 24) => b64u.enc(crypto.getRandomValues(new Uint8Array(n)));
 
-// ---------- settings ----------
-async function getSetting(env, k) {
-  const r = await env.DB.prepare("SELECT v FROM settings WHERE k = ?").bind(k).first();
-  return r ? r.v : null;
-}
-const setSetting = (env, k, v) => env.DB.prepare("INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v").bind(k, v).run();
-async function ensureSetting(env, k, make) {
-  let v = await getSetting(env, k);
-  if (v === null) { v = await make(); await env.DB.prepare("INSERT OR IGNORE INTO settings (k, v) VALUES (?, ?)").bind(k, v).run(); v = await getSetting(env, k); }
-  return v;
-}
 async function vapid(env) {
   const v = await ensureSetting(env, "vapid", async () => JSON.stringify(await generateVapid()));
   return JSON.parse(v);
@@ -28,11 +16,6 @@ async function hashPassword(pw, saltB64) {
   const key = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000 }, key, 256);
   return b64u.enc(salt) + "." + b64u.enc(bits);
-}
-async function sign(env, msg) {
-  const secret = await ensureSetting(env, "session_secret", () => rand(32));
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return b64u.enc(await crypto.subtle.sign("HMAC", key, enc.encode(msg)));
 }
 async function makeSession(env) {
   const exp = Date.now() + 365 * 864e5;
@@ -49,37 +32,6 @@ async function isAuthed(req, env) {
   return sig === (await sign(env, exp + "." + ver));
 }
 const cookie = v => `s=${v}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${365 * 86400}`;
-
-// ---------- time ----------
-function tzOffsetMin(tz, ms) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
-  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
-  return Math.round((asUtc - ms) / 60000);
-}
-// local wall time in tz -> UTC ms
-function localToUtc(tz, date, time) {
-  const [y, mo, d] = date.split("-").map(Number);
-  const [h, mi] = (time || "00:00").split(":").map(Number);
-  const guess = Date.UTC(y, mo - 1, d, h, mi);
-  let t = guess - tzOffsetMin(tz, guess) * 60000;
-  t = guess - tzOffsetMin(tz, t) * 60000;
-  return t;
-}
-const MORNING = "09:00";
-function computeRemindAt(tz, it) {
-  if (!it.due_date || !it.remind || it.remind === "none") return null;
-  const base = it.due_time || MORNING;
-  let ms;
-  switch (it.remind) {
-    case "at": ms = localToUtc(tz, it.due_date, base); break;
-    case "morning": ms = localToUtc(tz, it.due_date, MORNING); break;
-    case "15m": ms = localToUtc(tz, it.due_date, base) - 15 * 60000; break;
-    case "1h": ms = localToUtc(tz, it.due_date, base) - 60 * 60000; break;
-    case "1d": ms = localToUtc(tz, it.due_date, base) - 24 * 3600000; break;
-    default: return null;
-  }
-  return new Date(ms).toISOString();
-}
 
 // ---------- items ----------
 const FIELDS = ["parent", "text", "ord", "done", "collapsed", "due_date", "due_time", "remind", "repeat", "notes", "color", "icon", "priority"];
@@ -115,7 +67,11 @@ async function sync(env, body) {
          remind_at = excluded.remind_at, updated_at = excluded.updated_at`
     ).bind(it.id, ...FIELDS.map(f => it[f]), remindAt, remindAt && remindAt < past ? nowIso() : null, nowIso()));
   }
-  for (const id of body.delete || []) stmts.push(env.DB.prepare("DELETE FROM items WHERE id = ?").bind(String(id)));
+  for (const id of body.delete || []) {
+    // se la voce aveva un evento su Google, ricordo di cancellarlo (solo se l'evento l'avevo creato io; quelli arrivati da Google restano su Google)
+    stmts.push(env.DB.prepare("INSERT OR IGNORE INTO gcal_tomb (gcal_id, remote, at) SELECT gcal_id, CASE WHEN gcal_src = 1 THEN 0 ELSE 1 END, ? FROM items WHERE id = ? AND gcal_id IS NOT NULL").bind(nowIso(), String(id)));
+    stmts.push(env.DB.prepare("DELETE FROM items WHERE id = ?").bind(String(id)));
+  }
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
 }
 
@@ -168,7 +124,7 @@ function fold(line) { const out = []; while (line.length > 74) { out.push(line.s
 const icsUtc = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 async function calendar(env) {
   const tz = (await getSetting(env, "tz")) || "Europe/Rome";
-  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, remind, done, updated_at FROM items WHERE due_date IS NOT NULL").all()).results;
+  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, remind, done, updated_at FROM items WHERE due_date IS NOT NULL AND gcal_src = 0").all()).results;
   const all = (await env.DB.prepare("SELECT id, parent, text FROM items").all()).results;
   const byId = Object.fromEntries(all.map(r => [r.id, r]));
   const path = id => { const p = []; let c = byId[id]?.parent; for (let i = 0; c && byId[c] && i < 20; i++) { p.unshift(byId[c].text); c = byId[c].parent; } return p.join(" › "); };
@@ -194,7 +150,7 @@ async function calendar(env) {
 }
 
 // ---------- router ----------
-async function api(req, env, url) {
+async function api(req, env, url, ctx) {
   const p = url.pathname, m = req.method;
   const body = m === "POST" ? await req.json().catch(() => ({})) : {};
   const hasPw = !!(await getSetting(env, "pw_hash"));
@@ -225,12 +181,27 @@ async function api(req, env, url) {
     const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")} FROM items`).all()).results;
     return json({ items: rows });
   }
-  if (p === "/api/sync" && m === "POST") { await sync(env, body); return json({ ok: true }); }
+  if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(G.run(env, { pushOnly: true })); return json({ ok: true }); }
   if (p === "/api/settings" && m === "GET") {
     const calToken = await ensureSetting(env, "cal_token", () => rand(18));
     const devices = (await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subs").first()).n;
-    return json({ vapidKey: (await vapid(env)).publicKey, calendarUrl: `${url.origin}/cal/${calToken}.ics`, tz: (await getSetting(env, "tz")) || "Europe/Rome", devices });
+    return json({ vapidKey: (await vapid(env)).publicKey, calendarUrl: `${url.origin}/cal/${calToken}.ics`, tz: (await getSetting(env, "tz")) || "Europe/Rome", devices, google: await G.status(env, url) });
   }
+  if (p === "/api/google/config" && m === "POST") {
+    try { await G.saveConfig(env, body); } catch (e) { return json({ error: e.message }, 400); }
+    return json({ ok: true });
+  }
+  if (p === "/api/google/start" && m === "GET") {
+    const to = await G.startUrl(env, url);
+    return Response.redirect(to || url.origin + "/?google=err", 302);
+  }
+  if (p === "/api/google/callback" && m === "GET") {
+    const ok = await G.callback(env, url);
+    if (ok) ctx.waitUntil(G.run(env, { full: true }));
+    return Response.redirect(url.origin + "/?google=" + (ok ? "ok" : "err"), 302);
+  }
+  if (p === "/api/google/sync" && m === "POST") return json(await G.run(env, { full: true }));
+  if (p === "/api/google/disconnect" && m === "POST") { await G.disconnect(env); return json({ ok: true }); }
   if (p === "/api/push/subscribe" && m === "POST") {
     const s = body.subscription;
     if (!s || !s.endpoint || !s.keys) return json({ error: "Iscrizione non valida" }, 400);
@@ -252,10 +223,11 @@ async function api(req, env, url) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     try {
-      if (url.pathname.startsWith("/api/")) return await api(req, env, url);
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/cal/")) await G.ensureSchema(env).catch(e => console.log("schema", e.message));
+      if (url.pathname.startsWith("/api/")) return await api(req, env, url, ctx);
       const cal = url.pathname.match(/^\/cal\/([\w-]+)\.ics$/);
       if (cal) {
         const t = await getSetting(env, "cal_token");
@@ -269,6 +241,7 @@ export default {
     }
   },
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runReminders(env));
+    await G.ensureSchema(env).catch(e => console.log("schema", e.message));
+    ctx.waitUntil(Promise.all([runReminders(env), G.run(env)]));
   },
 };

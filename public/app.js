@@ -147,8 +147,9 @@ async function pull() {
     const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
+  const same = norm(next) === norm(items);
   items = next; synced = nextSynced; saveLocal();
-  if (!document.activeElement || !document.activeElement.isContentEditable && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") render();
+  if (!same && (!document.activeElement || !document.activeElement.isContentEditable && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA")) render();
 }
 function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
@@ -714,15 +715,44 @@ async function openSettings() {
     h("div", { class: "form-group-title" }, "Avvisi"), pushGroup, status,
     h("div", { class: "form-group-title" }, "App su Mac"),
     h("div", { class: "form-note", style: { margin: "0 0 20px" } }, "Per averla come un'app a sé, a schermo intero e con la sua icona: in Safari scegli ", h("b", null, "File › Aggiungi al Dock"), ". Nel menu di Chrome: ", h("b", null, "Salva e condividi › Installa Organize"), "."),
-    h("div", { class: "form-group-title" }, "Calendario"),
+    h("div", { class: "form-group-title" }, "Google Calendar"), ...googleBlock(s.google),
+    h("div", { class: "form-group-title" }, "Calendario Apple / altri"),
     h("div", { class: "form-group" },
       h("a", { class: "field btn", href: s.calendarUrl.replace(/^https?:/, "webcal:"), style: { textDecoration: "none" } }, h("span", { class: "lab" }, "Aggiungi al Calendario Apple")),
       h("div", { class: "copy-box" }, calCode, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(s.calendarUrl); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(calCode); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia"))),
-    h("div", { class: "form-note" }, h("b", null, "Apple: "), "premi il pulsante qui sopra da Safari e conferma ", h("i", null, "Iscriviti"), ". Gli avvisi che hai scelto arrivano anche da Calendario. ", h("br"), h("b", null, "Google Calendar: "), "dal computer, calendar.google.com › Altri calendari › + › Da URL, e incolla l'indirizzo. Google lo aggiorna solo ogni qualche ora e non usa i nostri avvisi: per quelli usa gli avvisi di Organize."),
+    h("div", { class: "form-note" }, "Premi il pulsante da Safari e conferma ", h("i", null, "Iscriviti"), ": le voci con data compaiono nel Calendario Apple, con gli avvisi scelti. ", h("b", null, "Se hai collegato Google qui sopra non serve"), ": vedresti ogni voce due volte (se hai già aggiunto questo indirizzo a Google Calendar, toglilo)."),
     h("div", { class: "form-group-title" }, "Account"),
     h("div", { class: "form-group" },
       h("button", { class: "field btn", onclick: changePassword }, "Cambia password"),
       h("button", { class: "field btn danger", onclick: async () => { await api("/api/logout", {}).catch(() => {}); localStorage.clear(); location.reload(); } }, "Esci")));
+}
+function googleBlock(g) {
+  const note = h("div", { class: "form-note" });
+  const link = (href, t) => h("a", { href, target: "_blank", rel: "noopener" }, t);
+  const copyBox = txt => { const c = h("code", null, txt); return h("div", { class: "copy-box", style: { padding: "6px 0 0" } }, c, h("button", { class: "btn-fill", onclick: async e => { try { await navigator.clipboard.writeText(txt); e.target.textContent = "Copiato"; } catch (_) { const r = document.createRange(); r.selectNodeContents(c); getSelection().removeAllRanges(); getSelection().addRange(r); } } }, "Copia")); };
+  if (g.connected) {
+    const when = g.lastSync ? new Date(g.lastSync).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+    note.textContent = g.error ? "⚠️ " + g.error : "Le voci con data finiscono su Google, gli eventi di Google arrivano qui nella categoria «Google Calendar». Si aggiorna da solo" + (when ? " (ultimo controllo alle " + when + ")." : ".");
+    return [h("div", { class: "form-group" },
+      field(fi("cal", "var(--green)"), h("span", { class: "lab" }, "Collegato ✓ " + (g.email || ""))),
+      h("button", { class: "field btn", onclick: async () => { note.textContent = "Sincronizzo…"; try { const r = await api("/api/google/sync", {}); note.textContent = r.ok ? "Fatto ✓" : "⚠️ " + (r.error || "Errore"); pull().catch(() => {}); } catch (e) { note.textContent = e.message; } } }, h("span", { class: "lab" }, "Sincronizza adesso")),
+      h("button", { class: "field btn danger", onclick: () => confirmSheet("Le voci già sincronizzate restano sia qui sia su Google; smettono solo di seguirsi.", "Scollega Google", async () => { await api("/api/google/disconnect", {}); openSettings(); }) }, h("span", { class: "lab" }, "Scollega Google"))), note];
+  }
+  const idI = h("input", { type: "text", placeholder: "ID client (finisce con .apps.googleusercontent.com)", value: g.clientId || "", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+  const secI = h("input", { type: "password", placeholder: "Segreto client", autocomplete: "off" });
+  const go = async () => { note.textContent = "Salvo…"; try { if (idI.value || secI.value || !g.configured) await api("/api/google/config", { clientId: idI.value, clientSecret: secI.value }); location.href = "/api/google/start"; } catch (e) { note.textContent = "⚠️ " + e.message; } };
+  const steps = h("ol", { class: "g-steps" },
+    h("li", null, "Apri ", link("https://console.cloud.google.com/projectcreate", "Google Cloud"), ", accedi con il tuo Google e crea un progetto chiamato ", h("b", null, "Organize"), "."),
+    h("li", null, "Apri ", link("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com", "Google Calendar API"), " e premi ", h("b", null, "Abilita"), "."),
+    h("li", null, "Apri ", link("https://console.cloud.google.com/auth/overview", "Google Auth Platform"), " › ", h("b", null, "Inizia"), ": nome app Organize, la tua email, pubblico ", h("b", null, "Esterno"), ", poi Crea."),
+    h("li", null, "Nella voce ", h("b", null, "Pubblico"), " premi ", h("b", null, "Pubblica app"), " e conferma (così il collegamento non scade dopo 7 giorni)."),
+    h("li", null, "Nella voce ", link("https://console.cloud.google.com/auth/clients", "Client"), " premi ", h("b", null, "Crea client"), " › tipo ", h("b", null, "Applicazione web"), ". In ", h("i", null, "URI di reindirizzamento autorizzati"), " incolla questo indirizzo, poi Crea:", copyBox(g.redirectUri)),
+    h("li", null, "Copia ", h("b", null, "ID client"), " e ", h("b", null, "Segreto client"), " e incollali qui sotto."),
+    h("li", null, "Premi ", h("b", null, "Salva e collega Google"), ". Se Google avvisa «app non verificata»: ", h("b", null, "Avanzate › Vai a Organize"), " e consenti il Calendario."));
+  return [
+    h("details", { class: "g-guide", open: !g.configured ? "" : null }, h("summary", null, g.configured ? "Rifai la preparazione / cambia le chiavi" : "Come si prepara (10 minuti, una volta sola)"), steps),
+    h("div", { class: "form-group" }, field(idI), field(secI),
+      h("button", { class: "field btn", onclick: go }, fi("cal", "var(--blue)"), h("span", { class: "lab" }, g.configured ? "Collega Google" : "Salva e collega Google"))), note];
 }
 function changePassword() {
   const i = h("input", { type: "password", placeholder: "Nuova password (min. 6)", autocomplete: "new-password" });
@@ -770,7 +800,20 @@ async function start() {
   items = lsGet("items", {}); synced = lsGet("synced", {}); showDone = lsGet("showDone", false);
   route = parseHash(); render();
   try { await pull(); route = parseHash(); render(); } catch (_) { setSync("err"); }
+  const gq = new URLSearchParams(location.search).get("google");
+  if (gq) {
+    history.replaceState(null, "", location.pathname + location.hash);
+    toast(gq === "ok" ? "Google Calendar collegato ✓" : "Collegamento non riuscito: controlla ID e segreto");
+    openSettings();
+  }
 }
+// ogni minuto ricarico le voci (cambiamenti arrivati da Google), ma mai mentre scrivi o hai una scheda aperta
+setInterval(() => {
+  if (document.visibilityState !== "visible" || !$("#sheetWrap").hidden) return;
+  const a = document.activeElement;
+  if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
+  pull().catch(() => {});
+}, 60000);
 window.addEventListener("hashchange", () => { if (route.v === "cat") lsSet("lastCat", route.id); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && items && Object.keys(synced).length + Object.keys(items).length >= 0) pull().catch(() => {}); });
 window.addEventListener("online", () => scheduleSync(100));
