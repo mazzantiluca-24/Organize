@@ -492,3 +492,19 @@ button.brand{cursor:pointer;border-radius:10px}
 .add-btn .ab-ic svg{width:13px;height:13px}
 .add-top .add-row.two{padding:0 4px}
 @media (max-width:799px){.add-btn{font-size:14px;padding:0 8px;gap:6px}}
+
+/* ---------- liste, note, preventivi ---------- */
+.add-btn .short{display:none}
+@media (max-width:799px){.add-btn .full{display:none}.add-btn .short{display:inline}.add-row.two{justify-content:space-between}.add-btn{padding:0 6px}}
+.sp-total.prev{background:color-mix(in srgb,var(--orange) 14%,transparent);color:var(--orange)}
+.lnew{display:flex;gap:8px;margin:0 0 14px}
+.lnew .add-btn{height:36px;background:var(--fill2);border:1px solid var(--sep)}
+.lcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:8px}
+.lcard{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:12px 14px;border-radius:14px;background:var(--bg2);box-shadow:var(--shadow);border-left:4px solid var(--c)}
+.lcard .ico{font-size:18px}.lcard .nm{font-weight:700;font-size:15px}.lcard .ct{font-size:12.5px;color:var(--label2)}
+.note-big{min-height:260px;font-size:16px;line-height:1.45}
+.tr.big{display:block;margin:12px auto 18px;padding:11px 18px;font-size:15px}
+.cat-card .ico svg{width:20px;height:20px}
+
+.push-warn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:12px 14px;border-radius:14px;margin:0 0 14px;background:color-mix(in srgb,var(--red) 11%,transparent);color:var(--red)}
+.pw-ic svg{width:24px;height:24px}.pw-tx{display:flex;flex-direction:column;font-size:13px;color:var(--label2)}.pw-tx b{font-size:15px;color:var(--red)}

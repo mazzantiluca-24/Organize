@@ -186,7 +186,7 @@ function toggleDone(id) {
 // ================= routing =================
 function parseHash() {
   const h = location.hash.slice(1);
-  if (h === "today" || h === "scheduled" || h === "all" || h === "done" || h === "spese") return { v: h };
+  if (["today", "scheduled", "all", "done", "spese", "preventivi", "liste"].includes(h)) return { v: h };
   if (h.startsWith("c-") && items[h.slice(2)]) return { v: "cat", id: h.slice(2) };
   if (h.startsWith("i-") && items[h.slice(2)]) { const c = catOf(h.slice(2)); return { v: "cat", id: c.id, hl: h.slice(2) }; }
   return { v: "today" };
@@ -268,8 +268,13 @@ function renderSide() {
         tile("scheduled", "Programmati", c.sc, "var(--red)", "cal"),
         tile("all", "Tutti", c.all, "#5b5b60", "tray"),
         tile("done", "Completati", c.dn, "#8e8e93", "done")),
-      h("div", { class: "cats spese-entry" }, h("button", { class: "cat" + (route.v === "spese" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("spese"); } },
-        h("span", { class: "ico", style: { "--c": "#34c759" } }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth()))), h("span", { class: "chev" }, icon("chev")))),
+      h("div", { class: "cats spese-entry" },
+        h("button", { class: "cat" + (route.v === "liste" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("liste"); } },
+          h("span", { class: "ico", style: { "--c": "#5856d6" } }, icon("note")), h("span", { class: "nm" }, "Liste e note"), h("span", { class: "chev" }, icon("chev"))),
+        h("button", { class: "cat" + (route.v === "spese" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("spese"); } },
+          h("span", { class: "ico", style: { "--c": "#34c759" } }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth()))), h("span", { class: "chev" }, icon("chev"))),
+        h("button", { class: "cat" + (route.v === "preventivi" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("preventivi"); } },
+          h("span", { class: "ico", style: { "--c": "#ff9500" } }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "chev" }, icon("chev")))),
       h("div", { class: "sec-title" }, "Le mie categorie"),
       catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
     h("div", { class: "side-foot" },
@@ -289,7 +294,8 @@ function renderMain() {
   else if (v === "scheduled") renderScheduled(inner);
   else if (v === "all") renderAll(inner);
   else if (v === "done") renderDoneView(inner);
-  else if (v === "spese") renderSpese(inner);
+  else if (v === "spese" || v === "preventivi") renderSpese(inner);
+  else if (v === "liste") renderListe(inner);
   return h("main", { class: "main" }, inner);
 }
 
@@ -321,7 +327,8 @@ function renderMainMobile(inner) {
   else if (v === "scheduled") renderScheduled(inner);
   else if (v === "all") renderAll(inner);
   else if (v === "done") renderDoneView(inner);
-  else if (v === "spese") renderSpese(inner);
+  else if (v === "spese" || v === "preventivi") renderSpese(inner);
+  else if (v === "liste") renderListe(inner);
   const pill = (view, label, n) => h("button", { class: "sp mb" + (route.v === view ? " on" : ""), onclick: () => go(view) }, h("b", null, n || 0), h("span", null, label));
   inner.append(h("div", { class: "mob-bar" }, pill("scheduled", "programmati", c.sc), pill("all", "tutti", c.all), pill("done", "completati", c.dn)));
   return h("main", { class: "main" }, inner);
@@ -342,6 +349,7 @@ function itemNode(it, opts) {
     const late = !it.done && it.due_date < t, isT = it.due_date === t;
     meta.push(h("span", { class: late ? "late" : isT ? "today" : "" }, dayLabel(it.due_date) + (it.due_time ? ", " + it.due_time + (durOf(it) ? "–" + it.due_end : "") : "")));
   }
+  if (it.kind === "note") meta.push(h("span", { class: "eur", style: { color: "var(--indigo, #5856d6)" } }, "Nota"));
   if (it.kind === "list") {
     const rows = kids(it.id), sp = rows.reduce((a, x) => a + spent(x), 0), pv = rows.reduce((a, x) => a + (x.est ? x.amount || 0 : 0), 0);
     meta.push(h("span", { class: "eur" }, "Lista · " + rows.length + " voci"));
@@ -432,8 +440,8 @@ function addRow(parent, ph, extra) {
   });
   inp.addEventListener("blur", () => { if (!inp.value.trim() && addingUnder === parent) setTimeout(() => { if (addingUnder === parent && !document.activeElement.matches("[data-add]")) { addingUnder = null; render(); } }, 150); });
   if (typeof extra === "function") {   // barra in alto: due pulsanti uguali, niente campo di testo né spunta
-    const b = (label, fn) => h("button", { class: "add-btn", type: "button", onclick: fn }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, label));
-    return h("li", null, h("div", { class: "add-row two" }, b("Nuovo promemoria", () => openNewReminder("")), b("Nuova lista", openNewList)));
+    const b = (label, fn, short) => h("button", { class: "add-btn", type: "button", onclick: fn }, h("span", { class: "ab-ic" }, icon("plus")), h("span", { class: "full" }, label), h("span", { class: "short" }, short));
+    return h("li", null, h("div", { class: "add-row two" }, b("Nuovo promemoria", () => openNewReminder(""), "Promemoria"), b("Nuova lista", openNewList, "Lista"), b("Nuova nota", openNewNote, "Nota")));
   }
   const ok = h("button", { class: "add-ok", title: "Salva", onmousedown: e => e.preventDefault(), onclick: submit }, icon("check"));
   return h("li", null, h("label", { class: "add-row" }, h("button", { class: "plus", type: "button", title: "Nuovo", onmousedown: e => e.preventDefault(), onclick: e => { e.preventDefault(); if (typeof extra === "function") { const tx = inp.value.trim(); inp.value = ""; openNewReminder(tx); } else inp.value.trim() ? submit() : inp.focus(); } }, icon("plus")), inp,
@@ -603,6 +611,7 @@ function renderToday(inner) {
       h("span", { class: "pill" + (todayOpen ? "" : " zero") }, h("b", null, todayOpen), "oggi"),
       h("span", { class: "pill green" + (todayDone ? "" : " zero") }, h("b", null, todayDone), todayDone === 1 ? "fatta" : "fatte"),
       h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
+  if (pushDevices === 0) inner.append(h("button", { class: "push-warn", onclick: openSettings }, h("span", { class: "pw-ic" }, icon("bell")), h("span", { class: "pw-tx" }, h("b", null, "Gli avvisi non arrivano sul telefono"), h("span", null, "Nessun dispositivo è collegato: tocca per attivarli"))));
   const addNode = addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } }));
   inner.append(h("ul", { class: "add-top" }, addNode));   // in alto, sopra la settimana (Mac e iPhone)
   inner.append(weekBoard(dated));
@@ -615,7 +624,9 @@ function renderToday(inner) {
   inner.append(panel(l));
   if (cats().length) {
     inner.append(h("div", { class: "group-h" }, "Categorie"));
-    inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null, cats().map(cat => {
+    inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null,
+      isMobile() ? h("button", { class: "cat-card", style: { "--c": "#ff9500" }, onclick: () => go("preventivi") }, h("span", { class: "ico" }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "bar" })) : null,
+      isMobile() ? h("button", { class: "cat-card", style: { "--c": "#5856d6" }, onclick: () => go("liste") }, h("span", { class: "ico" }, icon("note")), h("span", { class: "nm" }, "Liste e note"), h("span", { class: "ct" }, Object.values(items).filter(x => x.kind).length + " in tutto"), h("span", { class: "bar" })) : null, cats().map(cat => {
       const all = desc(cat.id), doneN = all.filter(k => items[k].done).length, openN = all.length - doneN;
       return h("button", { class: "cat-card", style: { "--c": cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) },
         h("span", { class: "ico" }, cat.icon || "•"), h("span", { class: "nm" }, cat.text),
@@ -624,11 +635,56 @@ function renderToday(inner) {
     }), isMobile() ? h("button", { class: "cat-card new", onclick: () => openCategory(null) }, h("span", { class: "ico" }, icon("plus")), h("span", { class: "nm" }, "Nuova categoria")) : null));
   }
 }
-let selMonth = null;
+function renderPreventivi(inner) {
+  const prev = Object.values(items).filter(x => x.parent && x.est && x.amount > 0);
+  const open = prev.filter(x => !x.done), tot = open.reduce((a, x) => a + x.amount, 0);
+  inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Preventivi")));
+  inner.append(h("div", { class: "sp-total prev" }, h("span", null, "Preventivi aperti"), h("b", null, fmtEur(tot))));
+  if (!prev.length) { inner.append(h("div", { class: "empty" }, "Nessun preventivo.", h("br"), "In una lista tocca il tasto ", h("b", null, "?"), " accanto all'importo.")); return; }
+  const byCat = new Map();
+  for (const it of prev) { const c = catOf(it.id); if (!c) continue; if (!byCat.has(c.id)) byCat.set(c.id, []); byCat.get(c.id).push(it); }
+  for (const [cid, arr] of byCat) {
+    const c = items[cid], sum = arr.filter(x => !x.done).reduce((a, x) => a + x.amount, 0);
+    const card = h("div", { class: "sp-cat", style: { "--c": c.color || COLORS[5] } }, h("div", { class: "sp-cat-h" }, h("span", { class: "ico" }, c.icon || "•"), h("span", { class: "nm" }, c.text), h("b", null, fmtEur(sum))));
+    const groups = new Map();
+    for (const it of arr) { const k = (pathOf(it.id) || c.text).split(" › ").slice(1).join(" › ") || "Generale"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+    for (const [k, g] of groups) {
+      card.append(h("div", { class: "sp-grp" }, h("span", null, k), h("b", null, fmtEur(g.filter(x => !x.done).reduce((a, x) => a + x.amount, 0)))));
+      g.forEach(it => card.append(h("button", { class: "sp-row" + (it.done ? " done" : ""), onclick: () => { const par = items[it.parent]; openItem(par && par.kind === "list" ? par.id : it.id); } },
+        h("span", { class: "t" }, it.text), h("span", { class: "d" }, it.due_date ? dayLabel(it.due_date) : ""), h("span", { class: "a" }, fmtEur(it.amount)))));
+    }
+    inner.append(card);
+  }
+}
+function renderListe(inner) {
+  inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Liste e note")));
+  inner.append(h("div", { class: "lnew" }, h("button", { class: "add-btn", onclick: openNewList }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, "Nuova lista")),
+    h("button", { class: "add-btn", onclick: openNewNote }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, "Nuova nota"))));
+  const all = Object.values(items).filter(x => x.parent && x.kind);
+  const sec = (kind, title) => {
+    const arr = all.filter(x => x.kind === kind).sort((a, b) => a.text.localeCompare(b.text));
+    if (!arr.length) return;
+    inner.append(h("div", { class: "group-h" }, title));
+    const ul = h("div", { class: "lcards" });
+    arr.forEach(it => {
+      const c = catOf(it.id) || {}, rows = kids(it.id);
+      const sp = rows.reduce((a, x) => a + spent(x), 0), pv = rows.reduce((a, x) => a + (x.est ? x.amount || 0 : 0), 0);
+      ul.append(h("button", { class: "lcard", style: { "--c": c.color || COLORS[5] }, onclick: () => openItem(it.id) },
+        h("span", { class: "ico" }, c.icon || "•"), h("span", { class: "nm" }, it.text),
+        kind === "list" ? h("span", { class: "ct" }, rows.length + " voci" + (sp ? " · " + fmtEur(sp) : "") + (pv ? " · ? " + fmtEur(pv) : "")) : h("span", { class: "ct" }, (it.notes || "").split("\n")[0].slice(0, 70) || "Nota vuota")));
+    });
+    inner.append(ul);
+  };
+  sec("list", "Liste"); sec("note", "Note");
+  if (!all.length) inner.append(h("div", { class: "empty" }, "Ancora nessuna lista o nota.", h("br"), "Creale con i pulsanti qui sopra."));
+}
+let selMonth = null, pushDevices = null;
 const thisMonth = () => today().slice(0, 7);
+const prevTotal = () => Object.values(items).reduce((a, x) => a + (x.parent && x.est && !x.done ? x.amount || 0 : 0), 0);
 const monthTotal = m => Object.values(items).reduce((a, x) => a + (x.parent && x.due_date && x.due_date.slice(0, 7) === m ? spent(x) : 0), 0);
 const addMonths = (m, n) => { const d = new Date(m + "-15T12:00"); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0, 7); };
 function renderSpese(inner) {
+  if (route.v === "preventivi") return renderPreventivi(inner);
   if (!selMonth) selMonth = thisMonth();
   const [yy, mm] = selMonth.split("-").map(Number);
   const spend = Object.values(items).filter(x => x.parent && x.amount > 0 && !x.est);
@@ -723,6 +779,7 @@ function openItem(id, opts = {}) {
   const fresh = !!opts.draft;
   const it = opts.draft || items[id]; if (!it) return;
   if (it.kind === "list") return openList(id, opts);
+  if (it.kind === "note") return openNote(id, opts);
   const d = { ...it, ...(opts.preset || {}) };
   const curCat = () => fresh ? it.parent : (catOf(id) || {}).id;
   const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), catOf(d.parent) ? catOf(d.parent).id : curCat(), v => { if (v === curCat()) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } });
@@ -832,6 +889,36 @@ function openList(id, opts = {}) {
     h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
     h("button", { class: "act green", onclick: () => { if (saveAll() !== false) closeSheet(); } }, "Conferma"));
   openSheet(head("Lista"), body, actions);
+  if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
+}
+function openNewNote() { const it = newDraft(ensureInbox(), { kind: "note" }); openNote(it.id, { draft: it }); }
+function openNote(id, opts = {}) {
+  const fresh = !!opts.draft;
+  const it = opts.draft || items[id]; if (!it) return;
+  const d = { text: it.text, notes: it.notes || "", parent: it.parent };
+  const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), d.parent, v => { d.parent = v; });
+  const ta = h("textarea", { class: "note-big", placeholder: "Scrivi qui la nota…", oninput: e => d.notes = e.target.value }, d.notes);
+  const saveNote = () => {
+    if (!(d.text || "").trim() && !(d.notes || "").trim()) { toast("Scrivi qualcosa"); return false; }
+    const title = (d.text || "").trim() || (d.notes || "").trim().split("\n")[0].slice(0, 60);
+    if (fresh) { Object.assign(it, { text: title, notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "note" }); items[it.id] = it; }
+    else { Object.assign(it, { text: title, notes: d.notes.trim() || null }); if (d.parent !== it.parent) { it.parent = d.parent; it.ord = nextOrd(d.parent); } }
+    commit(); return true;
+  };
+  const toReminder = () => {
+    if (saveNote() === false) return;
+    closeSheet();
+    const nd = newDraft(it.parent, { text: it.text, notes: it.notes, due_date: today(), remind: "morning" });
+    openItem(nd.id, { draft: nd });
+  };
+  const body = h("div", null,
+    h("div", { class: "form-group" }, field(h("input", { type: "text", value: d.text, placeholder: "Titolo della nota", oninput: e => d.text = e.target.value }), catSel), field(ta)),
+    h("button", { class: "tr big", onclick: toReminder }, "Trasforma in promemoria"));
+  const del = () => { if (fresh) { closeSheet(); return; } confirmSheet(`Eliminare la nota “${it.text}”?`, "Elimina", () => { removeItem(id); commit(); }); };
+  openSheet(head("Nota"), body, h("div", { class: "sheet-actions" },
+    h("button", { class: "act red", onclick: del }, "Elimina"),
+    h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
+    h("button", { class: "act green", onclick: () => { if (saveNote() !== false) closeSheet(); } }, "Conferma")));
   if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
 }
 function duplicate(id) {
@@ -1042,6 +1129,7 @@ async function start() {
   items = lsGet("items", {}); synced = lsGet("synced", {}); showDone = lsGet("showDone", false);
   route = parseHash(); render();
   try { await pull(); route = parseHash(); if (distinctCatColors()) commit(false); render(); } catch (_) { setSync("err"); }
+  api("/api/settings").then(st => { if (st && typeof st.devices === "number" && st.devices !== pushDevices) { pushDevices = st.devices; render(); } }).catch(() => {});
   const gq = new URLSearchParams(location.search).get("google");
   if (gq) {
     history.replaceState(null, "", location.pathname + location.hash);
