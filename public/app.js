@@ -263,6 +263,8 @@ function renderSide() {
         onkeydown: e => { if (e.key === "Escape") { e.target.value = ""; searchQ = ""; renderMainOnly(); $(".layout").classList.toggle("in-list", route.v !== "home"); setSearchOpen(false); e.target.blur(); } },
         onblur: () => { if (!searchQ) setSearchOpen(false); } })),
       pillsBar,
+      h("div", { class: "side-new" },
+        ...[["Lista", openNewList], ["Nota", openNewNote], ["Memo", () => openNewReminder("")]].map(([l, fn]) => h("button", { class: "sn", type: "button", onclick: fn }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, l)))),
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
         tile("scheduled", "Programmati", c.sc, "var(--red)", "cal"),
@@ -613,7 +615,7 @@ function renderToday(inner) {
       h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
   if (pushDevices === 0) inner.append(h("button", { class: "push-warn", onclick: openSettings }, h("span", { class: "pw-ic" }, icon("bell")), h("span", { class: "pw-tx" }, h("b", null, "Gli avvisi non arrivano sul telefono"), h("span", null, "Nessun dispositivo è collegato: tocca per attivarli"))));
   const addNode = addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } }));
-  inner.append(h("ul", { class: "add-top" }, addNode));   // in alto, sopra la settimana (Mac e iPhone)
+  if (isMobile()) inner.append(h("ul", { class: "add-top" }, addNode));   // iPhone: pulsanti in alto; su Mac stanno nella barra a sinistra
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
   const pending = Object.values(items).filter(x => x.parent && !x.due_date && !x.done && hasAmt(x) && visible(x) && !(items[x.parent] && items[x.parent].kind === "list"));
@@ -622,7 +624,7 @@ function renderToday(inner) {
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
   const l = itemList(dayList, { flat: true, path: true });
   inner.append(panel(l));
-  if (cats().length) {
+  if (isMobile() && cats().length) {   // su Mac le sezioni sono già nella barra a sinistra
     inner.append(h("div", { class: "group-h" }, "Categorie"));
     inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null,
       isMobile() ? h("button", { class: "cat-card", style: { "--c": "#ff9500" }, onclick: () => go("preventivi") }, h("span", { class: "ico" }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "bar" })) : null,
