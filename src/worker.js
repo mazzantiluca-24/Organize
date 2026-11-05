@@ -71,11 +71,15 @@ async function sync(env, body) {
          remind_at = excluded.remind_at, updated_at = excluded.updated_at`
     ).bind(it.id, ...FIELDS.map(f => it[f]), remindAt, remindAt && remindAt < past ? nowIso() : null, nowIso()));
   }
+  // ripristino dal cestino (dopo gli upsert, che non toccano deleted_at)
+  for (const id of body.restore || []) stmts.push(env.DB.prepare("UPDATE items SET deleted_at = NULL, updated_at = ? WHERE id = ?").bind(nowIso(), String(id)));
+  // "elimina" = cestino: la voce resta recuperabile, ma sparisce da promemoria, calendario e sincronizzazioni
   for (const id of body.delete || []) {
-    // se la voce aveva un evento su Google, ricordo di cancellarlo (solo se l'evento l'avevo creato io; quelli arrivati da Google restano su Google)
     stmts.push(env.DB.prepare("INSERT OR IGNORE INTO gcal_tomb (gcal_id, remote, at) SELECT gcal_id, CASE WHEN gcal_src = 1 THEN 0 ELSE 1 END, ? FROM items WHERE id = ? AND gcal_id IS NOT NULL").bind(nowIso(), String(id)));
-    stmts.push(env.DB.prepare("DELETE FROM items WHERE id = ?").bind(String(id)));
+    stmts.push(env.DB.prepare("UPDATE items SET deleted_at = ?, remind_at = NULL, gcal_id = NULL, gcal_updated = NULL, gcal_sync_at = NULL WHERE id = ?").bind(nowIso(), String(id)));
   }
+  // eliminazione definitiva (solo dal Cestino)
+  for (const id of body.purge || []) stmts.push(env.DB.prepare("DELETE FROM items WHERE id = ? AND deleted_at IS NOT NULL").bind(String(id)));
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
 }
 
@@ -109,7 +113,7 @@ async function runReminders(env) {
   const origin = await getSetting(env, "origin");
   if (!origin) return;
   const due = (await env.DB.prepare(
-    "SELECT * FROM items WHERE notified_at IS NULL AND done = 0 AND remind_at IS NOT NULL AND remind_at <= ? AND remind_at > ? ORDER BY remind_at LIMIT 20"
+    "SELECT * FROM items WHERE deleted_at IS NULL AND notified_at IS NULL AND done = 0 AND remind_at IS NOT NULL AND remind_at <= ? AND remind_at > ? ORDER BY remind_at LIMIT 20"
   ).bind(nowIso(), new Date(Date.now() - 2 * 864e5).toISOString()).all()).results;
   for (const it of due) {
     await env.DB.prepare("UPDATE items SET notified_at = ? WHERE id = ?").bind(nowIso(), it.id).run();
@@ -122,14 +126,30 @@ async function runReminders(env) {
   }
 }
 
+// riepilogo serale: una volta al giorno, dopo le 21, avviso con quanti impegni fatti (non cancella nulla)
+async function runSummary(env) {
+  const origin = await getSetting(env, "origin");
+  if (!origin) return;
+  const tz = (await getSetting(env, "tz")) || "Europe/Rome";
+  const now = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(now);
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hour12: false }).format(now)) % 24;
+  if (hour < 21 || (await getSetting(env, "sum_last")) === today) return;
+  await setSetting(env, "sum_last", today);
+  const r = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(done), 0) AS d FROM items WHERE deleted_at IS NULL AND due_date = ? AND parent != '' AND kind IS NOT 'note'").bind(today).first();
+  if (!r || !r.n) return;
+  const open = r.n - r.d;
+  await pushAll(env, origin, { title: "Riepilogo di oggi", body: r.d + " fatti su " + r.n + (open ? " · " + open + " da spuntare o spostare" : " · tutto fatto 🎉"), tag: "riepilogo", url: "/#riepilogo" });
+}
+
 // ---------- calendar ----------
 function icsEscape(s) { return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
 function fold(line) { const out = []; while (line.length > 74) { out.push(line.slice(0, 74)); line = " " + line.slice(74); } out.push(line); return out.join("\r\n"); }
 const icsUtc = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 async function calendar(env) {
   const tz = (await getSetting(env, "tz")) || "Europe/Rome";
-  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, due_end, gcal_span, remind, done, updated_at FROM items WHERE due_date IS NOT NULL AND gcal_src = 0").all()).results;
-  const all = (await env.DB.prepare("SELECT id, parent, text FROM items").all()).results;
+  const rows = (await env.DB.prepare("SELECT id, parent, text, notes, due_date, due_time, due_end, gcal_span, remind, done, updated_at FROM items WHERE due_date IS NOT NULL AND gcal_src = 0 AND deleted_at IS NULL").all()).results;
+  const all = (await env.DB.prepare("SELECT id, parent, text FROM items WHERE deleted_at IS NULL").all()).results;
   const byId = Object.fromEntries(all.map(r => [r.id, r]));
   const path = id => { const p = []; let c = byId[id]?.parent; for (let i = 0; c && byId[c] && i < 20; i++) { p.unshift(byId[c].text); c = byId[c].parent; } return p.join(" › "); };
   const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Organize//IT", "CALSCALE:GREGORIAN", "X-WR-CALNAME:Organize", "X-PUBLISHED-TTL:PT15M", "REFRESH-INTERVAL;VALUE=DURATION:PT15M"];
@@ -182,7 +202,7 @@ async function api(req, env, url, ctx) {
 
   if (p === "/api/logout" && m === "POST") return json({ ok: true }, 200, { "set-cookie": "s=; Path=/; Max-Age=0; Secure; HttpOnly" });
   if (p === "/api/items" && m === "GET") {
-    const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")} FROM items`).all()).results;
+    const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")}, deleted_at FROM items`).all()).results;
     return json({ items: rows });
   }
   if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(Promise.all([G.run(env, { pushOnly: true }), C.run(env, { pushOnly: true })])); return json({ ok: true }); }
@@ -253,6 +273,6 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await G.ensureSchema(env).catch(e => console.log("schema", e.message));
-    ctx.waitUntil(Promise.all([runReminders(env), G.run(env), C.run(env)]));
+    ctx.waitUntil(Promise.all([runReminders(env), runSummary(env), G.run(env), C.run(env)]));
   },
 };

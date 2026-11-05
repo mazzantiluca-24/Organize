@@ -25,6 +25,7 @@ const I = {
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   today: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor"/>',
   tray: '<path d="M4 13l2.5-7.5h11L20 13v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13h4.5l1 2h5l1-2H20"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
   done: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   more: '<circle cx="12" cy="12" r="9.2"/><circle cx="8" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="16" cy="12" r=".6" fill="currentColor"/>',
@@ -82,7 +83,10 @@ const LS = "organize:";
 let items = {};          // id -> item
 let synced = {};         // id -> JSON string last confirmed by server
 let route = { v: "home" };
-let showDone = false;
+let showDone = true;
+let trash = {};          // id -> voce eliminata (recuperabile), con deleted_at
+let restoreQ = new Set(), purgeQ = new Set();   // da comunicare al server
+let riepDay = null;
 const recentDone = new Set();
 let focusReq = null;     // {id, sel:'t'|'add', at:'end'}
 let addingUnder = null;  // id whose child add-row is open
@@ -129,11 +133,13 @@ function scheduleSync(ms = 500) { clearTimeout(syncTimer); syncTimer = setTimeou
 async function doSync() {
   if (syncing) { scheduleSync(300); return; }
   const { up, del } = pending();
-  if (!up.length && !del.length) { setSync("ok"); return; }
+  const rs = [...restoreQ], pg = [...purgeQ];
+  if (!up.length && !del.length && !rs.length && !pg.length) { setSync("ok"); return; }
   syncing = true;
   const sent = up.map(it => [it.id, norm(it)]);
   try {
-    await api("/api/sync", { upsert: up, delete: del });
+    await api("/api/sync", { upsert: up, delete: del, restore: rs, purge: pg });
+    rs.forEach(k => restoreQ.delete(k)); pg.forEach(k => purgeQ.delete(k)); saveQ();
     for (const [id, s] of sent) synced[id] = s;
     for (const id of del) delete synced[id];
     lsSet("synced", synced);
@@ -145,25 +151,42 @@ async function doSync() {
 function setSync(s) { syncState = s; const d = $("#syncDot"); if (d) { d.className = "sync-dot" + (s === "err" ? " err" : ""); d.title = s === "err" ? "Non sincronizzato, riprovo…" : "Sincronizzato"; } }
 async function pull() {
   const { up, del } = pending();
-  if (up.length || del.length) { await doSync(); if (pending().up.length) return; }
+  if (up.length || del.length || restoreQ.size || purgeQ.size) { await doSync(); if (pending().up.length || restoreQ.size || purgeQ.size) return; }
   const data = await api("/api/items");
-  const next = {}; const nextSynced = {};
+  const next = {}; const nextSynced = {}; const nextTrash = {};
   for (const r of data.items) {
     const it = { id: r.id, parent: r.parent || "", text: r.text, ord: r.ord, done: !!r.done, collapsed: !!r.collapsed, due_date: r.due_date, due_time: r.due_time, due_end: r.due_end || null, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), kind: r.kind || null, est: !!r.est, remind: r.remind, repeat: r.repeat, notes: r.notes, color: r.color, icon: r.icon, priority: r.priority || 0 };
+    if (r.deleted_at) { nextTrash[r.id] = { ...it, deleted_at: r.deleted_at }; continue; }
     next[r.id] = it; nextSynced[r.id] = norm(it);
   }
+  trash = nextTrash;
   const same = norm(next) === norm(items);
   items = next; synced = nextSynced; saveLocal();
   if (!same && (!document.activeElement || !document.activeElement.isContentEditable && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA")) render();
 }
-function saveLocal() { lsSet("items", items); lsSet("synced", synced); }
+function saveQ() { lsSet("restoreQ", [...restoreQ]); lsSet("purgeQ", [...purgeQ]); }
+function saveLocal() { lsSet("items", items); lsSet("synced", synced); lsSet("trash", trash); saveQ(); }
 function commit(rerender = true) { saveLocal(); if (rerender) render(); scheduleSync(); }
 
 function mkItem(parent, text, extra) {
   const it = { id: uid(), parent, text, ord: nextOrd(parent), done: false, collapsed: false, due_date: null, due_time: null, due_end: null, amount: null, kind: null, est: false, remind: null, repeat: null, notes: null, color: null, icon: null, priority: 0, ...extra };
   items[it.id] = it; return it;
 }
-function removeItem(id) { desc(id).concat(id).forEach(k => delete items[k]); }
+// "elimina" = cestino: la voce (e le sue sotto-voci) resta recuperabile; se non è mai arrivata al server sparisce davvero
+function removeItem(id) {
+  const now = new Date().toISOString();
+  desc(id).concat(id).forEach(k => { const it = items[k]; delete items[k]; if (it && synced[k]) trash[k] = { ...it, deleted_at: now }; restoreQ.delete(k); });
+}
+const trashKids = p => Object.values(trash).filter(x => x.parent === p);
+const trashDesc = id => { const out = []; const w = x => trashKids(x).forEach(k => { out.push(k.id); w(k.id); }); w(id); return out; };
+function restoreItem(id) {
+  const ids = new Set([id, ...trashDesc(id)]); let c = id, top = id;
+  for (let i = 0; i < 50 && c && trash[c]; i++) { ids.add(c); top = c; c = trash[c].parent; }
+  ids.forEach(k => { if (!trash[k]) return; const { deleted_at, ...it } = trash[k]; delete trash[k]; items[k] = it; restoreQ.add(k); });
+  if (items[top] && items[top].parent && !items[items[top].parent]) items[top].parent = ensureInbox();
+  commit(); toast("Ripristinato ✓");
+}
+function purgeItem(id) { [id, ...trashDesc(id)].forEach(k => { delete trash[k]; purgeQ.add(k); }); commit(); }
 function advance(it) {
   const t = today(); let d = it.due_date;
   const step = s => { const x = new Date(s + "T12:00");
@@ -177,7 +200,7 @@ function advance(it) {
 }
 function toggleDone(id) {
   const it = items[id];
-  if (!it.done && it.repeat && it.due_date) { advance(it); toast("Fatto ✓ Prossima volta: " + dayLabel(it.due_date, true)); commit(); return; }
+  if (!it.done && it.repeat && it.due_date) { const old = { ...it, id: uid(), repeat: null, done: true, ord: nextOrd(it.parent) }; items[old.id] = old; advance(it); toast("Fatto ✓ Prossima volta: " + dayLabel(it.due_date, true)); commit(); return; }
   it.done = !it.done;
   if (it.done) { recentDone.add(id); setTimeout(() => { recentDone.delete(id); if (!showDone) render(); }, 1400); }
   commit();
@@ -186,7 +209,7 @@ function toggleDone(id) {
 // ================= routing =================
 function parseHash() {
   const h = location.hash.slice(1);
-  if (["today", "scheduled", "all", "done", "spese", "preventivi", "liste"].includes(h)) return { v: h };
+  if (["today", "scheduled", "all", "done", "spese", "preventivi", "liste", "riepilogo", "cestino"].includes(h)) return { v: h };
   if (h.startsWith("c-") && items[h.slice(2)]) return { v: "cat", id: h.slice(2) };
   if (h.startsWith("i-") && items[h.slice(2)]) { const c = catOf(h.slice(2)); return { v: "cat", id: c.id, hl: h.slice(2) }; }
   return { v: "today" };
@@ -276,7 +299,11 @@ function renderSide() {
         h("button", { class: "cat" + (route.v === "spese" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("spese"); } },
           h("span", { class: "ico", style: { "--c": "#34c759" } }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth()))), h("span", { class: "chev" }, icon("chev"))),
         h("button", { class: "cat" + (route.v === "preventivi" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("preventivi"); } },
-          h("span", { class: "ico", style: { "--c": "#ff9500" } }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "chev" }, icon("chev")))),
+          h("span", { class: "ico", style: { "--c": "#ff9500" } }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "chev" }, icon("chev"))),
+        h("button", { class: "cat" + (route.v === "riepilogo" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; riepDay = today(); go("riepilogo"); } },
+          h("span", { class: "ico", style: { "--c": "#34c759" } }, icon("done")), h("span", { class: "nm" }, "Riepilogo"), h("span", { class: "chev" }, icon("chev"))),
+        h("button", { class: "cat" + (route.v === "cestino" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("cestino"); } },
+          h("span", { class: "ico", style: { "--c": "#8e8e93" } }, icon("trash")), h("span", { class: "nm" }, "Cestino"), Object.keys(trash).length ? h("span", { class: "ct" }, String(Object.keys(trash).length)) : null, h("span", { class: "chev" }, icon("chev")))),
       h("div", { class: "sec-title" }, "Le mie categorie"),
       catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
     h("div", { class: "side-foot" },
@@ -299,6 +326,8 @@ function renderMain() {
   else if (v === "done") renderDoneView(inner);
   else if (v === "spese" || v === "preventivi") renderSpese(inner);
   else if (v === "liste") renderListe(inner);
+  else if (v === "riepilogo") renderRiepilogo(inner);
+  else if (v === "cestino") renderCestino(inner);
   return h("main", { class: "main" }, inner);
 }
 
@@ -332,6 +361,8 @@ function renderMainMobile(inner) {
   else if (v === "done") renderDoneView(inner);
   else if (v === "spese" || v === "preventivi") renderSpese(inner);
   else if (v === "liste") renderListe(inner);
+  else if (v === "riepilogo") renderRiepilogo(inner);
+  else if (v === "cestino") renderCestino(inner);
   const pill = (view, label, n) => h("button", { class: "sp mb" + (route.v === view ? " on" : ""), onclick: () => go(view) }, h("b", null, n || 0), h("span", null, label));
   inner.append(h("div", { class: "mob-bar" }, pill("scheduled", "programmati", c.sc), pill("all", "tutti", c.all), pill("done", "completati", c.dn)));
   return h("main", { class: "main" }, inner);
@@ -629,13 +660,14 @@ function renderToday(inner) {
     inner.append(h("div", { class: "group-h" }, "Categorie"));
     inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null,
       isMobile() ? h("button", { class: "cat-card", style: { "--c": "#ff9500" }, onclick: () => go("preventivi") }, h("span", { class: "ico" }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "bar" })) : null,
+      isMobile() ? h("button", { class: "cat-card", style: { "--c": "#30b0c7" }, onclick: () => { riepDay = today(); go("riepilogo"); } }, h("span", { class: "ico" }, icon("done")), h("span", { class: "nm" }, "Riepilogo"), h("span", { class: "ct" }, todayDone + " fatti oggi"), h("span", { class: "bar" })) : null,
       isMobile() ? h("button", { class: "cat-card", style: { "--c": "#5856d6" }, onclick: () => go("liste") }, h("span", { class: "ico" }, icon("note")), h("span", { class: "nm" }, "Liste e note"), h("span", { class: "ct" }, Object.values(items).filter(x => x.kind).length + " in tutto"), h("span", { class: "bar" })) : null, cats().map(cat => {
       const all = desc(cat.id), doneN = all.filter(k => items[k].done).length, openN = all.length - doneN;
       return h("button", { class: "cat-card", style: { "--c": cat.color || COLORS[5] }, onclick: () => go("c-" + cat.id) },
         h("span", { class: "ico" }, cat.icon || "•"), h("span", { class: "nm" }, cat.text),
         h("span", { class: "ct" }, openN ? openN + " da fare" : "Tutto fatto"),
         h("span", { class: "bar" }, h("i", { style: { width: (all.length ? Math.round(doneN / all.length * 100) : 0) + "%" } })));
-    }), isMobile() ? h("button", { class: "cat-card new", onclick: () => openCategory(null) }, h("span", { class: "ico" }, icon("plus")), h("span", { class: "nm" }, "Nuova categoria")) : null));
+    }), isMobile() ? h("button", { class: "cat-card", style: { "--c": "#8e8e93" }, onclick: () => go("cestino") }, h("span", { class: "ico" }, icon("trash")), h("span", { class: "nm" }, "Cestino"), h("span", { class: "ct" }, Object.keys(trash).length + " eliminati"), h("span", { class: "bar" })) : null, isMobile() ? h("button", { class: "cat-card new", onclick: () => openCategory(null) }, h("span", { class: "ico" }, icon("plus")), h("span", { class: "nm" }, "Nuova categoria")) : null));
   }
 }
 function renderPreventivi(inner) {
@@ -658,6 +690,42 @@ function renderPreventivi(inner) {
     }
     inner.append(card);
   }
+}
+function renderRiepilogo(inner) {
+  const t = today(); if (!riepDay) riepDay = t;
+  const list = Object.values(items).filter(x => x.parent && x.due_date === riepDay && x.kind !== "note").sort(byDue);
+  const done = list.filter(x => x.done).length, open = list.length - done;
+  inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Riepilogo"),
+    h("span", { class: "rp-nav" },
+      h("button", { class: "icon-btn", title: "Giorno prima", onclick: () => { riepDay = addDays(riepDay, -1); render(); } }, icon("back")),
+      h("button", { class: "rp-day", onclick: () => { riepDay = t; render(); } }, riepDay === t ? "Oggi" : cap(dayLabel(riepDay, true))),
+      h("button", { class: "icon-btn", title: "Giorno dopo", onclick: () => { riepDay = addDays(riepDay, 1); render(); } }, icon("chev")))));
+  inner.append(h("div", { class: "rp-sum" },
+    h("div", { class: "rp-big" }, h("b", null, done), " fatti su ", h("b", null, list.length)),
+    h("span", { class: "bar" }, h("i", { style: { width: (list.length ? Math.round(done / list.length * 100) : 0) + "%" } }))));
+  if (!list.length) { inner.append(h("div", { class: "empty" }, "Nessun impegno in questo giorno.")); return; }
+  inner.append(panel(itemList(list, { flat: true, path: true })));
+  if (open) inner.append(h("button", { class: "subtle-btn", onclick: () => {
+    const nd = addDays(riepDay < t ? t : riepDay, 1);
+    list.filter(x => !x.done).forEach(x => { x.due_date = nd; }); commit(); toast(open + (open === 1 ? " spostato" : " spostati") + " a " + dayLabel(nd, true));
+  } }, "Sposta i " + open + " non fatti a " + "domani"));
+  inner.append(h("p", { class: "page-sub" }, "Niente viene cancellato: i fatti restano qui con la spunta."));
+}
+function renderCestino(inner) {
+  inner.append(h("div", { class: "big-title" }, "Cestino"), h("p", { class: "page-sub" }, "Quello che elimini resta qui e lo puoi ripristinare"));
+  const roots = Object.values(trash).filter(x => !trash[x.parent]).sort((a, b) => (b.deleted_at || "").localeCompare(a.deleted_at || ""));
+  if (!roots.length) { inner.append(h("div", { class: "empty" }, "Il cestino è vuoto.")); return; }
+  inner.append(h("button", { class: "subtle-btn", onclick: () => confirmSheet("Eliminare per sempre tutto il cestino (" + roots.length + ")? Non si potrà recuperare.", "Svuota cestino", () => { roots.forEach(r => purgeItem(r.id)); }) }, "Svuota cestino"));
+  const card = h("div", { class: "panel tr-list" });
+  roots.forEach(r => {
+    const n = trashDesc(r.id).length, when = (r.deleted_at || "").slice(0, 10);
+    card.append(h("div", { class: "tr-row" },
+      h("div", { class: "tr-tx" }, h("span", { class: "t" }, (r.icon || "") + " " + (r.text || "(senza titolo)")),
+        h("small", null, [r.due_date ? dayLabel(r.due_date, true) : "", n ? n + " sotto-voci" : "", when ? "eliminato il " + dayLabel(when, true) : ""].filter(Boolean).join(" · "))),
+      h("button", { class: "tr-b", onclick: () => restoreItem(r.id) }, "Ripristina"),
+      h("button", { class: "tr-b danger", onclick: () => confirmSheet("Eliminare “" + r.text + "” per sempre?", "Elimina per sempre", () => purgeItem(r.id)) }, "Elimina")));
+  });
+  inner.append(card);
 }
 function renderListe(inner) {
   inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Liste e note")));
@@ -969,7 +1037,7 @@ function catMenu(id) {
   openSheet(head(cat.text, null, btn("Fine", closeSheet, "r")),
     h("div", { class: "form-group" },
       h("button", { class: "field btn", onclick: () => openCategory(id) }, "Modifica nome, colore e icona"),
-      h("button", { class: "field btn", onclick: () => { showDone = !showDone; lsSet("showDone", showDone); closeSheet(); render(); } }, showDone ? "Nascondi completati" : "Mostra completati")),
+      h("button", { class: "field btn", onclick: () => { showDone = !showDone; lsSet("showDone2", showDone); closeSheet(); render(); } }, showDone ? "Nascondi completati" : "Mostra completati")),
     h("div", { class: "form-group" },
       h("button", { class: "field btn danger", onclick: () => confirmSheet(`Eliminare la categoria “${cat.text}” e tutto quello che contiene (${desc(id).length} voci)?`, "Elimina categoria", () => { removeItem(id); commit(false); go(isMobile() ? "home" : "today"); }) }, "Elimina categoria")));
 }
@@ -1129,7 +1197,7 @@ function distinctCatColors() {
   return changed;
 }
 async function start() {
-  items = lsGet("items", {}); synced = lsGet("synced", {}); showDone = lsGet("showDone", false);
+  items = lsGet("items", {}); synced = lsGet("synced", {}); showDone = lsGet("showDone2", true); trash = lsGet("trash", {}); restoreQ = new Set(lsGet("restoreQ", [])); purgeQ = new Set(lsGet("purgeQ", []));
   route = parseHash(); render();
   try { await pull(); route = parseHash(); if (distinctCatColors()) commit(false); render(); } catch (_) { setSync("err"); }
   api("/api/settings").then(st => { if (st && typeof st.devices === "number" && st.devices !== pushDevices) { pushDevices = st.devices; render(); } }).catch(() => {});

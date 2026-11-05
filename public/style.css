@@ -172,9 +172,9 @@ ul.items ul.items{padding-left:28px}
 .check svg{width:12px;height:12px;opacity:0;color:#fff}
 li.done>.row .check{background:var(--c,var(--blue));border-color:var(--c,var(--blue))}
 li.done>.row .check svg{opacity:1}
+li.done>.row{opacity:.5}
 li.done>.row .t{color:var(--label2);text-decoration:line-through;text-decoration-color:var(--label3)}
 li.just>.row .check{animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
-li.just>.row{animation:fadeout .45s ease 1s forwards}
 @keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
 @keyframes fadeout{to{opacity:0;transform:translateX(6px)}}
 .panel li.new>.row,.row.enter{animation:enter .25s ease}
@@ -541,3 +541,18 @@ button.brand{cursor:pointer;border-radius:10px}
   .side .brand{gap:8px}
   .side-head{padding:12px 8px 26px}
 }
+
+/* riepilogo e cestino */
+.rp-nav{display:flex;align-items:center;gap:4px}
+.rp-day{border:0;background:var(--fill,rgba(120,120,128,.14));border-radius:999px;padding:6px 14px;font:inherit;font-weight:600;color:var(--label)}
+.rp-sum{margin:6px 0 14px}
+.rp-big{font-size:20px;margin-bottom:8px}.rp-big b{font-size:28px}
+.rp-sum .bar{display:block;height:8px;border-radius:99px;background:rgba(120,120,128,.18);overflow:hidden}
+.rp-sum .bar i{display:block;height:100%;background:#34c759;border-radius:99px}
+.tr-row{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:.5px solid var(--sep,rgba(60,60,67,.18))}
+.tr-row:last-child{border-bottom:0}
+.tr-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tr-tx .t{font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr-tx small{color:var(--label2);font-size:12.5px}
+.tr-b{border:0;border-radius:999px;padding:7px 12px;font:inherit;font-size:14px;font-weight:600;background:rgba(0,122,255,.12);color:var(--blue)}
+.tr-b.danger{background:rgba(255,59,48,.12);color:var(--red)}

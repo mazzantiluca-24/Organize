@@ -200,7 +200,7 @@ async function push(env, tz) {
   const cutoff = localParts(tz, Date.now() - BACK_DAYS * 864e5).date;
   const rows = (await env.DB.prepare(
     `SELECT id, text, notes, due_date, due_time, due_end, remind, done, updated_at, gcal_id, gcal_span, gcal_src FROM items
-     WHERE parent != '' AND (gcal_span IS NULL OR substr(gcal_span, 1, 1) != 'R') AND (
+     WHERE parent != '' AND deleted_at IS NULL AND (gcal_span IS NULL OR substr(gcal_span, 1, 1) != 'R') AND (
        (due_date IS NOT NULL AND (gcal_id IS NOT NULL OR due_date >= ?) AND (gcal_id IS NULL OR gcal_sync_at IS NULL OR gcal_sync_at != updated_at))
        OR (due_date IS NULL AND gcal_id IS NOT NULL))
      ORDER BY updated_at LIMIT ?`).bind(cutoff, BATCH).all()).results;
