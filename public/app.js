@@ -256,7 +256,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" })), h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear")))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -280,6 +280,7 @@ function renderSide() {
       h("div", { class: "sec-title" }, "Le mie categorie"),
       catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
     h("div", { class: "side-foot" },
+      h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"))),
       h("span", { id: "syncDot", class: "sync-dot" + (syncState === "err" ? " err" : "") })));
 }
 function renderMainOnly() { const m = $(".main"); if (m) m.replaceWith(renderMain()); }

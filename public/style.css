@@ -522,3 +522,15 @@ button.brand{cursor:pointer;border-radius:10px}
   .main-inner.wide{padding-top:calc(18px + var(--safeT))}
   .wk-head{height:35px;margin:0 2px 12px}
 }
+
+/* ---------- Mac: pulsanti in fondo alla barra, voci un po' più grandi ---------- */
+@media (min-width:800px){
+  .side-foot{justify-content:space-between;padding:8px 10px 12px}
+  .side-foot .head-btns{gap:4px}
+  .side-foot .head-btns .icon-btn{width:30px;height:30px}
+  .side-head{padding:10px 6px 22px}
+  .side-new{margin-bottom:46px}
+  .spese-entry .cat{min-height:38px;padding:5px 8px}
+  .spese-entry .cat .nm{font-size:16px;font-weight:550}
+  .spese-entry .cat .ico{width:28px;height:28px;font-size:15px}
+}
