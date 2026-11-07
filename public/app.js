@@ -25,6 +25,8 @@ const I = {
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   today: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor"/>',
   tray: '<path d="M4 13l2.5-7.5h11L20 13v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13h4.5l1 2h5l1-2H20"/>',
+  more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  check2: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   trash: '<path d="M4 7h16M9 7V4.5h6V7M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
   done: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
@@ -285,9 +287,8 @@ function renderSide() {
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
         onkeydown: e => { if (e.key === "Escape") { e.target.value = ""; searchQ = ""; renderMainOnly(); $(".layout").classList.toggle("in-list", route.v !== "home"); setSearchOpen(false); e.target.blur(); } },
         onblur: () => { if (!searchQ) setSearchOpen(false); } })),
-      pillsBar,
-      h("div", { class: "side-new" },
-        ...[["Lista", openNewList], ["Nota", openNewNote], ["Memo", () => openNewReminder("")]].map(([l, fn]) => h("button", { class: "sn", type: "button", onclick: fn }, h("span", { class: "ab-ic" }, icon("plus")), h("span", null, l)))),
+      h("div", { class: "side-pills side-new" },
+        ...[["", "Lista", openNewList], ["orange", "Nota", openNewNote], ["green", "Memo", () => openNewReminder("")]].map(([cls, l, fn]) => h("button", { class: "sp " + cls, type: "button", onclick: fn }, h("b", null, "+"), h("span", null, l)))),
       h("div", { class: "tiles" },
         tile("today", "Oggi", c.td, "var(--blue)", "today"),
         tile("scheduled", "Programmati", c.sc, "var(--red)", "cal"),
@@ -305,7 +306,8 @@ function renderSide() {
         h("button", { class: "cat" + (route.v === "cestino" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("cestino"); } },
           h("span", { class: "ico", style: { "--c": "#8e8e93" } }, icon("trash")), h("span", { class: "nm" }, "Cestino"), Object.keys(trash).length ? h("span", { class: "ct" }, String(Object.keys(trash).length)) : null, h("span", { class: "chev" }, icon("chev")))),
       h("div", { class: "sec-title" }, "Le mie categorie"),
-      catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora")),
+      catList.length ? h("div", { class: "cats" }, catList) : h("div", { class: "empty", style: { padding: "20px" } }, "Nessuna categoria ancora"),
+      h("div", { class: "side-pills mono" }, ...pillsBar.children)),
     h("div", { class: "side-foot" },
       h("span", { class: "head-btns" }, h("button", { class: "icon-btn search-btn" + (searchOpen || searchQ ? " on" : ""), title: "Cerca (⌘K)", onmousedown: e => e.preventDefault(), onclick: () => setSearchOpen(!(searchOpen && !searchQ)) }, icon("search")), FS_OK ? h("button", { class: "icon-btn fs-btn", title: isFs() ? "Esci da schermo intero" : "Schermo intero", onclick: toggleFs }, icon(isFs() ? "shrink" : "expand")) : null, h("button", { class: "icon-btn", title: "Impostazioni", onclick: openSettings }, icon("gear"))),
       h("span", { id: "syncDot", class: "sync-dot" + (syncState === "err" ? " err" : "") })));
@@ -351,7 +353,7 @@ function renderMainMobile(inner) {
   const left = home
     ? h("button", { class: "brand", title: "Pagina principale", onclick: () => { selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))
     : h("button", { class: "back", onclick: () => go("today") }, icon("back"), "Organize");
-  top = h("div", { class: "topbar" }, left, h("span", { class: "head-btns" }, h("button", { class: "icon-btn", title: "Cerca", onclick: () => { searchOpen = true; render(); } }, icon("search")), gear));
+  top = h("div", { class: "topbar" }, left, h("span", { class: "head-btns" }, h("button", { class: "icon-btn", title: "Cerca", onclick: () => { searchOpen = true; render(); } }, icon("search")), h("button", { class: "icon-btn", title: "Menu", onclick: openMenu }, icon("more")), gear));
   inner.append(top);
   const v = route.v;
   if (v === "cat") renderCat(inner, top);
@@ -363,8 +365,8 @@ function renderMainMobile(inner) {
   else if (v === "liste") renderListe(inner);
   else if (v === "riepilogo") renderRiepilogo(inner);
   else if (v === "cestino") renderCestino(inner);
-  const pill = (view, label, n) => h("button", { class: "sp mb" + (route.v === view ? " on" : ""), onclick: () => go(view) }, h("b", null, n || 0), h("span", null, label));
-  inner.append(h("div", { class: "mob-bar" }, pill("scheduled", "programmati", c.sc), pill("all", "tutti", c.all), pill("done", "completati", c.dn)));
+  const addPill = (cls, label, fn) => h("button", { class: "sp mb " + cls, onclick: fn }, h("b", null, "+"), h("span", null, label));
+  inner.append(h("div", { class: "mob-bar" }, addPill("", "Promemoria", () => openNewReminder("")), addPill("orange", "Lista", openNewList), addPill("green", "Nota", openNewNote)));
   return h("main", { class: "main" }, inner);
 }
 
@@ -647,7 +649,7 @@ function renderToday(inner) {
       h("span", { class: "pill red" + (late.length ? "" : " zero") }, h("b", null, late.length), late.length === 1 ? "scaduta" : "scadute"))));
   if (pushDevices === 0) inner.append(h("button", { class: "push-warn", onclick: openSettings }, h("span", { class: "pw-ic" }, icon("bell")), h("span", { class: "pw-tx" }, h("b", null, "Gli avvisi non arrivano sul telefono"), h("span", null, "Nessun dispositivo è collegato: tocca per attivarli"))));
   const addNode = addRow("today", "Nuovo promemoria", () => ({ parent: ensureInbox(), extra: { due_date: selDay, remind: "morning" } }));
-  if (isMobile()) inner.append(h("ul", { class: "add-top" }, addNode));   // iPhone: pulsanti in alto; su Mac stanno nella barra a sinistra
+  void addNode;   // i pulsanti per aggiungere stanno in basso (iPhone) o nella barra a sinistra (Mac)
   inner.append(weekBoard(dated));
   if (late.length) { inner.append(h("div", { class: "group-h late" }, "Scaduti")); inner.append(panel(itemList(late, { flat: true, path: true }))); }
   const pending = Object.values(items).filter(x => x.parent && !x.due_date && !x.done && hasAmt(x) && visible(x) && !(items[x.parent] && items[x.parent].kind === "list"));
@@ -656,7 +658,7 @@ function renderToday(inner) {
   inner.append(h("div", { class: "group-h" }, selDay === t ? "Oggi" : cap(dayLabel(selDay, true))));
   const l = itemList(dayList, { flat: true, path: true });
   inner.append(panel(l));
-  if (isMobile() && cats().length) {   // su Mac le sezioni sono già nella barra a sinistra
+  if (false) {   // (menu ⋯ su iPhone, barra a sinistra su Mac)  le sezioni sono già nella barra a sinistra
     inner.append(h("div", { class: "group-h" }, "Categorie"));
     inner.append(h("div", { class: "cat-cards" }, isMobile() ? h("button", { class: "cat-card", style: { "--c": "#34c759" }, onclick: () => go("spese") }, h("span", { class: "ico" }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth())) + " questo mese"), h("span", { class: "bar" })) : null,
       isMobile() ? h("button", { class: "cat-card", style: { "--c": "#ff9500" }, onclick: () => go("preventivi") }, h("span", { class: "ico" }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "bar" })) : null,
@@ -710,6 +712,23 @@ function renderRiepilogo(inner) {
     list.filter(x => !x.done).forEach(x => { x.due_date = nd; }); commit(); toast(open + (open === 1 ? " spostato" : " spostati") + " a " + dayLabel(nd, true));
   } }, "Sposta i " + open + " non fatti a " + "domani"));
   inner.append(h("p", { class: "page-sub" }, "Niente viene cancellato: i fatti restano qui con la spunta."));
+}
+function openMenu() {
+  const c = counts();
+  const go2 = (v, fn) => () => { closeSheet(); searchQ = ""; if (fn) fn(); go(v); };
+  const row = (ic, color, label, n, fn) => h("button", { class: "field btn", onclick: fn }, h("span", { class: "fi", style: { background: color } }, ic), h("span", { class: "lab" }, label), n ? h("span", { class: "ct" }, String(n)) : null);
+  openSheet(head("Menu", null, btn("Fine", closeSheet, "r")),
+    h("div", { class: "form-group" },
+      row(icon("cal"), "var(--red)", "Programmati", c.sc, go2("scheduled")),
+      row(icon("tray"), "#5b5b60", "Tutti", c.all, go2("all")),
+      row(icon("done"), "#8e8e93", "Completati", c.dn, go2("done"))),
+    h("div", { class: "form-group" },
+      row(icon("note"), "#5856d6", "Liste e note", 0, go2("liste")),
+      row("€", "#34c759", "Spese", 0, go2("spese")),
+      row("?", "#ff9500", "Preventivi", 0, go2("preventivi")),
+      row(icon("done"), "#30b0c7", "Riepilogo", 0, go2("riepilogo", () => { riepDay = today(); })),
+      row(icon("trash"), "#8e8e93", "Cestino", Object.keys(trash).length, go2("cestino"))),
+    h("div", { class: "form-group" }, ...cats().map(cat => row(cat.icon || "•", cat.color || COLORS[5], cat.text, openCount(cat.id), go2("c-" + cat.id)))));
 }
 function renderCestino(inner) {
   inner.append(h("div", { class: "big-title" }, "Cestino"), h("p", { class: "page-sub" }, "Quello che elimini resta qui e lo puoi ripristinare"));
@@ -900,12 +919,13 @@ function newDraft(parent, extra) {
 function openNewList() { const it = newDraft(ensureInbox(), { kind: "list" }); openList(it.id, { draft: it }); }
 function openNewReminder(text, extra) { const it = newDraft(ensureInbox(), { text: text || "", due_date: selDay || today(), remind: "morning", ...extra }); openItem(it.id, { draft: it }); }
 function openList(id, opts = {}) {
+  if (!opts.draft && !opts.edit) return viewList(id);
   const fresh = !!opts.draft;
   const it = opts.draft || items[id]; if (!it) return;
   const d = { text: it.text, notes: it.notes || "", parent: it.parent };
   const ex = fresh ? [] : kids(id);
-  let rows = ex.map(k => ({ id: k.id, text: k.text, amount: hasAmt(k) ? String(k.amount).replace(".", ",") : "", est: !!k.est }));
-  while (rows.length < 5) rows.push({ id: null, text: "", amount: "", est: false });
+  let rows = ex.map(k => ({ id: k.id, text: k.text, amount: hasAmt(k) ? String(k.amount).replace(".", ",") : "", est: !!k.est, done: !!k.done }));
+  while (rows.length < 5) rows.push({ id: null, text: "", amount: "", est: false, done: false });
   const num = v => { const n = Number(String(v).trim().replace(",", ".")); return v === "" || !isFinite(n) ? null : Math.max(0, n); };
   const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), d.parent, v => { d.parent = v; });
   const tot = (est) => rows.reduce((a, x) => a + (!!x.est === est ? num(x.amount) || 0 : 0), 0);
@@ -915,6 +935,7 @@ function openList(id, opts = {}) {
   const drawRows = () => {
     list.replaceChildren(...rows.map((row, i) => h("div", { class: "lrow" },
       h("div", { class: "lr1" },
+        h("button", { class: "lk" + (row.done ? " on" : ""), title: "Fatto", onclick: () => { row.done = !row.done; drawRows(); } }, icon("check2")),
         h("input", { type: "text", class: "lt", placeholder: "Voce " + (i + 1), value: row.text, oninput: e => row.text = e.target.value }),
         h("button", { class: "lx", title: "Togli riga", onclick: () => { rows.splice(i, 1); drawRows(); upd(); } }, "×")),
       h("div", { class: "lr2" },
@@ -925,7 +946,7 @@ function openList(id, opts = {}) {
   };
   const saveAll = () => {
     if (!(d.text || "").trim()) { toast("Scrivi un titolo"); return false; }
-    if (fresh) { Object.assign(it, { text: d.text.trim(), notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "list" }); items[it.id] = it; }
+    if (fresh) { Object.assign(it, { text: d.text.trim(), notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "list", due_date: it.due_date || today() }); items[it.id] = it; }
     else { const moved = d.parent !== it.parent; Object.assign(it, { text: d.text.trim(), notes: d.notes.trim() || null }); if (moved) { it.parent = d.parent; it.ord = nextOrd(d.parent); } }
     const keep = new Set();
     rows.forEach((row, i) => {
@@ -933,7 +954,7 @@ function openList(id, opts = {}) {
       if (!txt && amt === null) return;
       let k = row.id && items[row.id];
       if (!k) { k = mkItem(it.id, txt || "Voce", {}); row.id = k.id; }
-      Object.assign(k, { text: txt || k.text || "Voce", amount: amt, est: !!row.est, ord: i + 1, parent: it.id }); keep.add(k.id);
+      Object.assign(k, { text: txt || k.text || "Voce", amount: amt, est: !!row.est, done: !!row.done, ord: i + 1, parent: it.id }); keep.add(k.id);
     });
     ex.forEach(k => { if (!keep.has(k.id) && items[k.id]) removeItem(k.id); });
     it.collapsed = false; commit(); return true;
@@ -952,7 +973,7 @@ function openList(id, opts = {}) {
       field(h("span", { class: "fi", style: { background: "var(--green)", fontWeight: 800, fontSize: "15px" } }, "€"), h("span", { class: "lab" }, "Spesa"), spEl),
       field(h("span", { class: "fi", style: { background: "var(--orange)", fontWeight: 800, fontSize: "15px" } }, "?"), h("span", { class: "lab" }, "Preventivo"), pvEl)),
     list,
-    h("button", { class: "lplus", title: "Aggiungi una riga", onclick: () => { rows.push({ id: null, text: "", amount: "", est: false }); drawRows(); const ins = list.querySelectorAll(".lt"); ins[ins.length - 1].focus(); } }, icon("plus")));
+    h("button", { class: "lplus", title: "Aggiungi una riga", onclick: () => { rows.push({ id: null, text: "", amount: "", est: false, done: false }); drawRows(); const ins = list.querySelectorAll(".lt"); ins[ins.length - 1].focus(); } }, icon("plus")));
   drawRows(); upd();
   const del = () => { if (fresh) { closeSheet(); return; } confirmSheet(`Eliminare la lista “${it.text}” e le sue ${ex.length} voci?`, "Elimina", () => { removeItem(id); commit(); }); };
   const actions = h("div", { class: "sheet-actions" },
@@ -962,8 +983,27 @@ function openList(id, opts = {}) {
   openSheet(head("Lista"), body, actions);
   if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
 }
+function catChip(it) { const c = catOf(it.id); return c && c.id !== it.id ? h("span", { class: "v-cat", style: { "--c": c.color || COLORS[5] } }, (c.icon || "") + " " + c.text) : null; }
+function viewNote(id) {
+  const it = items[id]; if (!it) return;
+  openSheet(head("Nota"), h("div", { class: "view" }, h("div", { class: "v-title" }, it.text), catChip(it), h("div", { class: "v-text" }, it.notes || "")),
+    h("div", { class: "sheet-actions two" }, h("button", { class: "act sky", onclick: closeSheet }, "Chiudi"), h("button", { class: "act green", onclick: () => { closeSheet(); openNote(id, { edit: true }); } }, "✎ Modifica")));
+}
+function viewList(id) {
+  const it = items[id]; if (!it) return;
+  const box = h("div", { class: "form-group vrows" });
+  const draw = () => {
+    const ks = kids(id);
+    box.replaceChildren(...(ks.length ? ks : [h("div", { class: "empty", style: { padding: "16px" } }, "Lista vuota")]).map(k => k.id ? h("button", { class: "vrow" + (k.done ? " done" : ""), onclick: () => { k.done = !k.done; commit(); draw(); } },
+      h("span", { class: "vck" }, icon("check2")), h("span", { class: "vt" }, k.text), hasAmt(k) && k.amount ? h("span", { class: "eur" + (k.est ? " prev" : "") }, fmtEur(k.amount)) : null) : k));
+  };
+  draw();
+  openSheet(head("Lista"), h("div", { class: "view" }, h("div", { class: "v-title" }, it.text), catChip(it), box),
+    h("div", { class: "sheet-actions two" }, h("button", { class: "act sky", onclick: closeSheet }, "Chiudi"), h("button", { class: "act green", onclick: () => { closeSheet(); openList(id, { edit: true }); } }, "✎ Modifica")));
+}
 function openNewNote() { const it = newDraft(ensureInbox(), { kind: "note" }); openNote(it.id, { draft: it }); }
 function openNote(id, opts = {}) {
+  if (!opts.draft && !opts.edit) return viewNote(id);
   const fresh = !!opts.draft;
   const it = opts.draft || items[id]; if (!it) return;
   const d = { text: it.text, notes: it.notes || "", parent: it.parent };
@@ -972,7 +1012,7 @@ function openNote(id, opts = {}) {
   const saveNote = () => {
     if (!(d.text || "").trim() && !(d.notes || "").trim()) { toast("Scrivi qualcosa"); return false; }
     const title = (d.text || "").trim() || (d.notes || "").trim().split("\n")[0].slice(0, 60);
-    if (fresh) { Object.assign(it, { text: title, notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "note" }); items[it.id] = it; }
+    if (fresh) { Object.assign(it, { text: title, notes: d.notes.trim() || null, parent: d.parent, ord: nextOrd(d.parent), kind: "note", due_date: it.due_date || today() }); items[it.id] = it; }
     else { Object.assign(it, { text: title, notes: d.notes.trim() || null }); if (d.parent !== it.parent) { it.parent = d.parent; it.ord = nextOrd(d.parent); } }
     commit(); return true;
   };
