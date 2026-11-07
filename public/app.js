@@ -878,7 +878,7 @@ function openItem(id, opts = {}) {
     body.replaceChildren(...[
       h("div", { class: "form-group" },
         field(h("input", { type: "text", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
-        field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
+        !d.notes ? null : field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
         field(h("span", { class: "lab" }), catSel),
         h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
       h("div", { class: "form-group" },
