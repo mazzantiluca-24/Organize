@@ -873,13 +873,15 @@ function openItem(id, opts = {}) {
   const d = { ...it, ...(opts.preset || {}) };
   const curCat = () => fresh ? it.parent : (catOf(id) || {}).id;
   const catSel = select(Object.fromEntries(cats().map(c => [c.id, (c.icon ? c.icon + " " : "") + c.text])), catOf(d.parent) ? catOf(d.parent).id : curCat(), v => { if (v === curCat()) { d.parent = it.parent; d.ord = it.ord; } else { d.parent = v; d.ord = nextOrd(v); } });
+  let colorOpen = false;
   const body = h("div");
   const draw = () => {
     body.replaceChildren(...[
       h("div", { class: "form-group" },
-        field(h("input", { type: "text", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value }), catSel),
+        field(h("input", { type: "text", class: "title-in", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
+        field(h("span", { class: "lab" }), catSel, h("button", { class: "colbtn", title: "Colore", style: d.color ? { background: d.color } : null, onclick: () => { colorOpen = !colorOpen; draw(); } }, d.color ? "" : "∅")),
         !d.notes ? null : field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
-        h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
+        !colorOpen ? null : h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
           sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; d.due_end = null; } draw(); })),
