@@ -45,6 +45,7 @@ export function computeRemindAt(tz, it) {
     case "at": ms = localToUtc(tz, it.due_date, base); break;
     case "morning": ms = localToUtc(tz, it.due_date, MORNING); break;
     case "15m": ms = localToUtc(tz, it.due_date, base) - 15 * 60000; break;
+    case "30m": ms = localToUtc(tz, it.due_date, base) - 30 * 60000; break;
     case "1h": ms = localToUtc(tz, it.due_date, base) - 60 * 60000; break;
     case "1d": ms = localToUtc(tz, it.due_date, base) - 24 * 3600000; break;
     default: return null;

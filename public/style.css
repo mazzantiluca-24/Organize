@@ -581,6 +581,17 @@ button.brand{cursor:pointer;border-radius:10px}
 .field .ct{color:var(--label2);font-size:15px}
 .sp.mb.orange{background:color-mix(in srgb,var(--orange) 15%,transparent);color:var(--orange)}
 .sp.mb.green{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
-.field input[type=text].title-in{font-size:19px;font-weight:600;padding:12px 14px;border:2px solid var(--label3);border-radius:12px;background:var(--bg2);width:100%;flex:1}
-.field input[type=text].title-in:focus{border-color:var(--blue);outline:0}
+.tbox input.title-in{font-size:19px;font-weight:600;padding:12px 14px;border:2px solid var(--label3);border-radius:12px;background:var(--bg2);width:100%;flex:1}
+.tbox input.title-in:focus{border-color:var(--blue);outline:0}
 .colbtn{width:28px;height:28px;border-radius:50%;flex:none;border:1.5px solid var(--sep);background:var(--fill2);color:var(--label2);font-size:13px}
+
+.tbox{padding:12px}
+.tbox input.title-in{display:block;margin:0 0 10px}
+.tbox .tb-notes{width:100%;border:0;background:none;outline:none;padding:8px 2px;margin-bottom:8px;resize:none;font:inherit}
+.tb-row{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.tbox .swatches{margin-top:10px}
+.field input[type=time].t-end{margin-left:6px}
+.tbox select{border:1px solid var(--sep);background:var(--fill2);border-radius:8px;padding:6px 10px;outline:none;font-size:15px;color:var(--label);max-width:100%}
+.field input[type=time]{min-width:0;flex:0 1 96px;padding:6px 6px;font-size:14px}
+.field input[type=time].t-end{margin-left:0}
+@media (max-width:420px){.field input[type=time]{flex-basis:82px;padding:5px 3px;font-size:13px}.field .fi+.lab{flex:0 0 auto}}

@@ -60,9 +60,9 @@ function dayLabel(s, long) {
   const base = (long ? GIORNI[d.getDay()] + " " : "") + d.getDate() + " " + (long ? MESI[d.getMonth()] : MESI[d.getMonth()].slice(0, 3));
   return d.getFullYear() !== new Date().getFullYear() ? base + " " + d.getFullYear() : base;
 }
-const REMIND = { none: "Nessuno", morning: "Il giorno stesso alle 9", at: "All'ora della scadenza", "15m": "15 minuti prima", "1h": "1 ora prima", "1d": "Il giorno prima" };
+const REMIND = { none: "Nessuno", morning: "Il giorno stesso alle 9", at: "All'ora della scadenza", "15m": "15 minuti prima", "30m": "30 minuti prima", "1h": "1 ora prima", "1d": "Il giorno prima" };
 const PRIO = ["", "Bassa", "Media", "Alta"];
-const REPEAT = { "": "Mai", daily: "Ogni giorno", weekly: "Ogni settimana", monthly: "Ogni mese", yearly: "Ogni anno" };
+const REPEAT = { "": "Mai", daily: "Ogni giorno", weekly: "Ogni settimana", monthly: "Ogni mese", yearly: "Ogni anno", "15min": "Dopo 15 minuti" };
 const FS_EL = document.documentElement;
 const FS_OK = !!(FS_EL.requestFullscreen || FS_EL.webkitRequestFullscreen) && !/iPhone|iPad|iPod/.test(navigator.userAgent);
 const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -190,6 +190,7 @@ function restoreItem(id) {
 }
 function purgeItem(id) { [id, ...trashDesc(id)].forEach(k => { delete trash[k]; purgeQ.add(k); }); commit(); }
 function advance(it) {
+  if (it.repeat === "15min") { const n = new Date(Date.now() + 15 * 60000), du = durOf(it); it.due_date = iso(n); it.due_time = pad(n.getHours()) + ":" + pad(n.getMinutes()); it.due_end = du && mins(it.due_time) + du < 1440 ? hhmm(mins(it.due_time) + du) : null; it.remind = "at"; return; }
   const t = today(); let d = it.due_date;
   const step = s => { const x = new Date(s + "T12:00");
     if (it.repeat === "daily") x.setDate(x.getDate() + 1);
@@ -877,19 +878,19 @@ function openItem(id, opts = {}) {
   const body = h("div");
   const draw = () => {
     body.replaceChildren(...[
-      h("div", { class: "form-group" },
-        field(h("input", { type: "text", class: "title-in", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value })),
-        field(h("span", { class: "lab" }), catSel, h("button", { class: "colbtn", title: "Colore", style: d.color ? { background: d.color } : null, onclick: () => { colorOpen = !colorOpen; draw(); } }, d.color ? "" : "∅")),
-        !d.notes ? null : field(h("textarea", { placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || "")),
+      h("div", { class: "form-group tbox" },
+        h("input", { type: "text", class: "title-in", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value }),
+        !d.notes ? null : h("textarea", { class: "tb-notes", placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || ""),
+        h("div", { class: "tb-row" }, catSel, h("button", { class: "colbtn", title: "Colore", style: d.color ? { background: d.color } : null, onclick: () => { colorOpen = !colorOpen; draw(); } }, d.color ? "" : "∅")),
         !colorOpen ? null : h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
       h("div", { class: "form-group" },
-        field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data", d.due_date ? h("div", { style: { fontSize: "14px", color: "var(--blue)" } }, dayLabel(d.due_date, true)) : null),
+        field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data"),
+          d.due_date ? h("input", { type: "date", value: d.due_date, onchange: e => { if (e.target.value) { d.due_date = e.target.value; draw(); } } }) : null,
           sw(!!d.due_date, v => { d.due_date = v ? (d.due_date || today()) : null; if (v && !d.remind) d.remind = d.due_time ? "15m" : "morning"; if (!v) { d.due_time = null; d.due_end = null; } draw(); })),
-        d.due_date ? field(h("span", { class: "lab" }), h("input", { type: "date", value: d.due_date, onchange: e => { if (e.target.value) { d.due_date = e.target.value; draw(); } } })) : null,
-        d.due_date ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Ora"), sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v) d.due_end = null; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null,
-        d.due_date && d.due_time ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_time, onblur: e => { if (e.target.value) { const du = durOf(d); d.due_time = e.target.value; if (du) d.due_end = mins(d.due_time) + du < 1440 ? hhmm(mins(d.due_time) + du) : null; draw(); } } })) : null,
-        d.due_date && d.due_time ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Fine"), sw(!!d.due_end, v => { d.due_end = v ? hhmm(Math.min(1439, mins(d.due_time) + 60)) : null; draw(); })) : null,
-        d.due_date && d.due_time && d.due_end ? field(h("span", { class: "lab" }), h("input", { type: "time", value: d.due_end, onblur: e => { const v = e.target.value; if (v && mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } })) : null),
+        d.due_date ? field(fi("clock", "var(--blue)"), h("span", { class: "lab" }, "Ora"),
+          d.due_time ? h("input", { type: "time", value: d.due_time, onblur: e => { if (e.target.value) { const du = durOf(d); d.due_time = e.target.value; if (du) d.due_end = mins(d.due_time) + du < 1440 ? hhmm(mins(d.due_time) + du) : null; draw(); } } }) : null,
+          d.due_time ? h("input", { type: "time", class: "t-end", value: d.due_end || "", title: "Fine", onblur: e => { const v = e.target.value; if (!v) { d.due_end = null; } else if (mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } }) : null,
+          sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v) d.due_end = null; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null),
       d.due_date ? h("div", { class: "form-group" },
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),
         field(fi("repeat", "#8e8e93"), h("span", { class: "lab" }, "Ripeti"), select(REPEAT, d.repeat || "", v => d.repeat = v || null))) : null,
@@ -905,7 +906,7 @@ function openItem(id, opts = {}) {
     h("button", { class: "act red", onclick: del }, "Elimina"),
     h("button", { class: "act sky", onclick: closeSheet }, "Annulla"),
     h("button", { class: "act green", onclick: () => { if (save() !== false) closeSheet(); } }, "Conferma"));
-  openSheet(head("Dettagli"), body, actions);
+  openSheet(head(""), body, actions);
   if (fresh) setTimeout(() => { const t = body.querySelector('input[type=text]'); if (t) t.focus(); }, 60);
 }
 // ---------- scheda B: lista con righe di spesa / preventivo ----------
