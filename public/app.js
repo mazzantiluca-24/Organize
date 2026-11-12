@@ -879,9 +879,10 @@ function openItem(id, opts = {}) {
   const draw = () => {
     body.replaceChildren(...[
       h("div", { class: "form-group tbox" },
-        h("input", { type: "text", class: "title-in", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value }),
+        h("div", { class: "title-wrap" },
+          h("input", { type: "text", class: "title-in", value: d.text, placeholder: "Titolo", oninput: e => d.text = e.target.value }),
+          catSel, h("button", { class: "colbtn", title: "Colore", style: d.color ? { background: d.color } : null, onclick: () => { colorOpen = !colorOpen; draw(); } }, d.color ? "" : "∅")),
         !d.notes ? null : h("textarea", { class: "tb-notes", placeholder: "Note", oninput: e => d.notes = e.target.value }, d.notes || ""),
-        h("div", { class: "tb-row" }, catSel, h("button", { class: "colbtn", title: "Colore", style: d.color ? { background: d.color } : null, onclick: () => { colorOpen = !colorOpen; draw(); } }, d.color ? "" : "∅")),
         !colorOpen ? null : h("div", { class: "swatches" }, h("button", { class: "sw0" + (d.color ? "" : " on"), title: "Colore della categoria", onclick: () => { d.color = null; draw(); } }, "∅"), COLORS.map(c => h("button", { class: c === d.color ? "on" : "", style: { background: c }, "aria-label": c, onclick: () => { d.color = c; draw(); } })))),
       h("div", { class: "form-group" },
         field(fi("cal", "var(--red)"), h("span", { class: "lab" }, "Data"),
