@@ -1113,7 +1113,7 @@ async function openSettings() {
     status.textContent = perm === "denied" ? "Le notifiche sono bloccate per questo sito: riattivale dalle impostazioni del sistema." : `Dispositivi con avvisi attivi: ${s.devices}.`;
   }
   const calCode = h("code", null, s.calendarUrl);
-  body.replaceChildren(
+  body.replaceChildren(h("div", { class: "form-note", style: { margin: "0 0 10px", textAlign: "center" } }, "Versione 12 nov · scheda nuova"), 
     h("div", { class: "form-group" }, h("button", { class: "field btn", onclick: () => { closeSheet(); openCategory(null); } }, fi("plus", "var(--blue)"), h("span", { class: "lab", style: { color: "var(--blue)" } }, "Nuova categoria"))),
     h("div", { class: "form-group-title" }, "Aspetto"),
     h("div", { class: "form-group" }, field(h("span", { class: "lab" }, "Tema"), h("div", { class: "seg" }, [["Auto", "auto"], ["Chiaro", "light"], ["Scuro", "dark"]].map(([l, v]) => h("button", { class: lsGet("theme", "auto") === v ? "on" : "", onclick: e => { lsSet("theme", v); applyTheme(); e.target.parentNode.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === e.target)); } }, l))))),
