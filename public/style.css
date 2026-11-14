@@ -600,3 +600,6 @@ button.brand{cursor:pointer;border-radius:10px}
 .title-wrap:focus-within{border-color:var(--blue)}
 .tbox .title-wrap input.title-in{border:0;margin:0;flex:1;min-width:0;padding:8px 10px;background:none;outline:0}
 .title-wrap select{flex:0 1 auto;max-width:42%;font-size:14px}
+
+.wk-days{display:flex;flex-direction:column;gap:14px}
+.wa-btn{border:0;border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;font-weight:650;background:color-mix(in srgb,#25d366 18%,transparent);color:#128c4a}

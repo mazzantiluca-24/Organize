@@ -282,7 +282,7 @@ function renderSide() {
     h("span", { class: "nm" }, cat.text), h("span", { class: "ct" }, openCount(cat.id) || ""), h("span", { class: "chev" }, icon("chev"))));
   return h("aside", { class: "side" },
     h("div", { class: "side-scroll" },
-      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))),
+      h("div", { class: "side-head" }, h("button", { class: "brand", title: "Pagina principale", onclick: () => { searchQ = ""; selDay = today(); wkStart = mondayOf(today()); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))),
       h("label", { class: "search" + (searchOpen || searchQ ? " open" : "") }, icon("search"), h("input", {
         type: "search", placeholder: "Cerca", value: searchQ,
         oninput: e => { searchQ = e.target.value; renderMainOnly(); const l = $(".layout"); l.classList.toggle("in-list", !!searchQ || route.v !== "home"); },
@@ -352,7 +352,7 @@ function renderMainMobile(inner) {
     return h("main", { class: "main" }, inner);
   }
   const left = home
-    ? h("button", { class: "brand", title: "Pagina principale", onclick: () => { selDay = today(); wkStart = today(); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))
+    ? h("button", { class: "brand", title: "Pagina principale", onclick: () => { selDay = today(); wkStart = mondayOf(today()); go("today"); } }, h("img", { class: "b-tile", src: "/logo-tile.png", alt: "" }), h("img", { class: "wm", src: "/logo-organize.png", alt: "Organize" }))
     : h("button", { class: "back", onclick: () => go("today") }, icon("back"), "Organize");
   top = h("div", { class: "topbar" }, left, h("span", { class: "head-btns" }, h("button", { class: "icon-btn", title: "Cerca", onclick: () => { searchOpen = true; render(); } }, icon("search")), h("button", { class: "icon-btn", title: "Menu", onclick: openMenu }, icon("more")), gear));
   inner.append(top);
@@ -507,6 +507,7 @@ function ensureInbox() {
   const c = mkItem("", "Promemoria", { color: COLORS[5], icon: "📋" }); return c.id;
 }
 let selDay = null, wkStart = null;
+const mondayOf = d => addDays(d, -((new Date(d + "T12:00").getDay() + 6) % 7));
 const DOW = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const ROW = 52, DUR = 48;
@@ -592,18 +593,24 @@ function axis(s0, e0) {
   return a;
 }
 function weekBoard(dated) {
-  const t = today(); if (!selDay) selDay = t; if (!wkStart) wkStart = t;
-  const N = isMobile() ? 3 : 7;
+  const t = today(); if (!selDay) selDay = t; if (!wkStart) wkStart = mondayOf(t);
+  const N = 7;
   const days = [...Array(N)].map((_, i) => addDays(wkStart, i));
   const a = new Date(days[0] + "T12:00"), z = new Date(days[N - 1] + "T12:00");
   const label = a.getMonth() === z.getMonth() ? `${a.getDate()}–${z.getDate()} ${MESI[a.getMonth()]}` : `${a.getDate()} ${MESI[a.getMonth()].slice(0, 3)} – ${z.getDate()} ${MESI[z.getMonth()].slice(0, 3)}`;
   // titolo lungo per Mac: "da Domenica 1 a Sabato 7 - Novembre" (se la settimana cambia mese: "da Giovedì 29 - Ottobre a Mercoledì 4 - Novembre")
   const longLabel = `da ${cap(GIORNI[a.getDay()])} ${a.getDate()}${a.getMonth() === z.getMonth() ? "" : " - " + cap(MESI[a.getMonth()])} a ${cap(GIORNI[z.getDay()])} ${z.getDate()} - ${cap(MESI[z.getMonth()])}`;
-  const inWeek = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[N - 1]);
-  const [s0, e0] = hourRange(inWeek);
-  const parts = days.map((d, i) => dayParts(d, dated, s0, e0, i));
-  const desk = h("div", { class: "wk-desk", style: { "--n": N } },
-    h("span"), parts.map(p => p.head), h("span", { class: "wk-axl" }), parts.map(p => p.allday), axis(s0, e0), parts.map(p => p.col));
+  // Mac: una riga di 7 giorni. iPhone: due file sovrapposte (lun–gio e ven–dom)
+  const groups = isMobile() ? [[0, 1, 2, 3], [4, 5, 6]] : [[0, 1, 2, 3, 4, 5, 6]];
+  const parts = [];
+  const desks = groups.map(g => {
+    const inG = dated.filter(x => x.due_date >= days[g[0]] && x.due_date <= days[g[g.length - 1]]);
+    const [s0, e0] = hourRange(inG);
+    const ps = g.map(i => (parts[i] = dayParts(days[i], dated, s0, e0, i)));
+    return h("div", { class: "wk-desk", style: { "--n": g.length } },
+      h("span"), ps.map(p => p.head), h("span", { class: "wk-axl" }), ps.map(p => p.allday), axis(s0, e0), ps.map(p => p.col));
+  });
+  const desk = h("div", { class: "wk-days" }, ...desks);
   // iPhone: week strip with counts + the selected day with its hours
   const dayList = dated.filter(x => x.due_date === selDay);
   const timed = dayList.filter(x => x.due_time).flatMap(x => [+x.due_time.slice(0, 2), Math.ceil((mins(x.due_time) + durOf(x)) / 60)]);
@@ -631,10 +638,24 @@ function weekBoard(dated) {
   return h("div", { class: "wk", style: { "--row": ROW + "px" } },
     h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, h("span", { class: "t-long" }, longLabel), h("span", { class: "t-short" }, label)),
       h("div", { class: "wk-nav" },
-        (wkStart !== t || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = t; render(); } }, "Oggi") : null,
+        (wkStart !== mondayOf(t) || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = mondayOf(t); render(); } }, "Oggi") : null,
+        h("button", { class: "wa-btn", title: "Condividi la settimana su WhatsApp", onclick: () => shareWeek(days, dated) }, "WhatsApp"),
         h("button", { class: "icon-btn", title: "Indietro", onclick: () => { wkStart = addDays(wkStart, -N); selDay = wkStart; render(); } }, icon("back")),
         h("button", { class: "icon-btn", title: "Avanti", onclick: () => { wkStart = addDays(wkStart, N); selDay = wkStart; render(); } }, icon("chev")))),
     desk, mob);
+}
+function shareWeek(days, dated) {
+  const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
+  const lines = [`📅 Settimana ${a.getDate()} ${MESI[a.getMonth()]} – ${z.getDate()} ${MESI[z.getMonth()]}`];
+  days.forEach(d => {
+    const ev = dated.filter(x => x.due_date === d && x.kind !== "note").sort(byDue);
+    if (!ev.length) return;
+    const dt = new Date(d + "T12:00");
+    lines.push("", `*${cap(GIORNI[dt.getDay()])} ${dt.getDate()}*`);
+    ev.forEach(x => lines.push(`${x.done ? "✅" : "•"} ${x.due_time ? x.due_time + (durOf(x) ? "–" + x.due_end : "") + " " : ""}${x.text}`));
+  });
+  if (lines.length === 1) { toast("Nessun impegno in questa settimana"); return; }
+  window.open("https://wa.me/?text=" + encodeURIComponent(lines.join("\n")), "_blank");
 }
 function renderToday(inner) {
   const t = today(), d = new Date(); if (!selDay) selDay = t;
@@ -892,6 +913,7 @@ function openItem(id, opts = {}) {
           d.due_time ? h("input", { type: "time", value: d.due_time, onblur: e => { if (e.target.value) { const du = durOf(d); d.due_time = e.target.value; if (du) d.due_end = mins(d.due_time) + du < 1440 ? hhmm(mins(d.due_time) + du) : null; draw(); } } }) : null,
           d.due_time ? h("input", { type: "time", class: "t-end", value: d.due_end || "", title: "Fine", onblur: e => { const v = e.target.value; if (!v) { d.due_end = null; } else if (mins(v) > mins(d.due_time)) d.due_end = v; else { toast("La fine deve essere dopo l'inizio"); } draw(); } }) : null,
           sw(!!d.due_time, v => { d.due_time = v ? (d.due_time || "09:00") : null; if (v && d.remind === "morning") d.remind = "15m"; if (!v) d.due_end = null; if (!v && (d.remind === "15m" || d.remind === "1h" || d.remind === "at")) d.remind = "morning"; draw(); })) : null),
+      fresh ? null : h("div", { class: "form-group" }, field(fi("check", "var(--green)"), h("span", { class: "lab" }, "Fatto"), sw(!!d.done, v => { d.done = v; draw(); }))),
       d.due_date ? h("div", { class: "form-group" },
         field(fi("bell", "var(--orange)"), h("span", { class: "lab" }, "Avviso"), select(REMIND, d.remind || "none", v => d.remind = v)),
         field(fi("repeat", "#8e8e93"), h("span", { class: "lab" }, "Ripeti"), select(REPEAT, d.repeat || "", v => d.repeat = v || null))) : null,
