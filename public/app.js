@@ -639,10 +639,75 @@ function weekBoard(dated) {
     h("div", { class: "wk-head" }, h("div", { class: "wk-title" }, h("span", { class: "t-long" }, longLabel), h("span", { class: "t-short" }, label)),
       h("div", { class: "wk-nav" },
         (wkStart !== mondayOf(t) || selDay !== t) ? h("button", { class: "wk-today", onclick: () => { selDay = t; wkStart = mondayOf(t); render(); } }, "Oggi") : null,
-        h("button", { class: "wa-btn", title: "Condividi la settimana su WhatsApp", onclick: () => shareWeek(days, dated) }, "WhatsApp"),
+        h("button", { class: "wa-btn", title: "Condividi la settimana", onclick: () => shareMenu(days, dated) }, "Condividi"),
         h("button", { class: "icon-btn", title: "Indietro", onclick: () => { wkStart = addDays(wkStart, -N); selDay = wkStart; render(); } }, icon("back")),
         h("button", { class: "icon-btn", title: "Avanti", onclick: () => { wkStart = addDays(wkStart, N); selDay = wkStart; render(); } }, icon("chev")))),
     desk, mob);
+}
+function shareMenu(days, dated) {
+  const row = (ic, color, label, fn) => h("button", { class: "field btn", onclick: () => { closeSheet(); fn(); } }, h("span", { class: "fi", style: { background: color } }, ic), h("span", { class: "lab" }, label));
+  openSheet(head("Condividi la settimana", null, btn("Fine", closeSheet, "r")), h("div", { class: "form-group" },
+    row("🖼", "#25d366", "Immagine del calendario (WhatsApp…)", () => shareImage(days, dated)),
+    row("💬", "#34c759", "Testo su WhatsApp", () => shareWeek(days, dated))));
+}
+async function shareImage(days, dated) {
+  const W = 1400, PAD = 24, AX = 56, HEAD = 96, cw = (W - PAD * 2 - AX) / 7;
+  const inW = dated.filter(x => x.due_date >= days[0] && x.due_date <= days[6]);
+  const [s0, e0] = hourRange(inW), RH = 64, H = HEAD + (e0 - s0) * RH + PAD * 2 + 70;
+  const sc = 2, cv = document.createElement("canvas"); cv.width = W * sc; cv.height = H * sc;
+  const g = cv.getContext("2d"); g.scale(sc, sc);
+  const FONT = '-apple-system, "SF Pro Text", Helvetica, Arial, sans-serif';
+  const rr = (x, y, w, hh, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + hh, r); g.arcTo(x + w, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+  g.fillStyle = "#f7f7f5"; g.fillRect(0, 0, W, H);
+  const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
+  g.fillStyle = "#1c1c1e"; g.font = `700 30px ${FONT}`; g.textBaseline = "alphabetic";
+  g.fillText(`Settimana ${a.getDate()} ${MESI[a.getMonth()]} – ${z.getDate()} ${MESI[z.getMonth()]}`, PAD, 46);
+  const top = 70, bodyTop = top + HEAD - 20, gx = PAD + AX;
+  g.fillStyle = "#fff"; rr(PAD, top, W - PAD * 2, bodyTop - top + (e0 - s0) * RH + 10, 18); g.fill();
+  const t = today();
+  days.forEach((d, i) => {
+    const x = gx + i * cw, dt = new Date(d + "T12:00");
+    if (d === t) { g.fillStyle = "#e8f0fb"; g.fillRect(x, top, cw, bodyTop - top + (e0 - s0) * RH + 10); }
+    g.textAlign = "center"; g.fillStyle = d === t ? "#2f6fd6" : "#8e8e93"; g.font = `700 15px ${FONT}`; g.fillText(DOW[(dt.getDay() + 6) % 7].toUpperCase(), x + cw / 2, top + 32);
+    g.fillStyle = d === t ? "#2f6fd6" : "#1c1c1e"; g.font = `700 30px ${FONT}`; g.fillText(String(dt.getDate()), x + cw / 2, top + 68);
+    g.strokeStyle = "#ececec"; g.lineWidth = 1; g.beginPath(); g.moveTo(x, top); g.lineTo(x, bodyTop + (e0 - s0) * RH + 10); g.stroke();
+  });
+  g.textAlign = "right"; g.font = `600 13px ${FONT}`;
+  for (let hr = s0; hr < e0; hr++) {
+    const y = bodyTop + (hr - s0) * RH + 10;
+    g.strokeStyle = "#ececec"; g.beginPath(); g.moveTo(gx, y); g.lineTo(W - PAD, y); g.stroke();
+    g.fillStyle = "#8e8e93"; g.fillText(String(hr).padStart(2, "0"), gx - 10, y + 5);
+  }
+  const wrap = (txt, maxW, maxLines) => { const words = txt.split(/\s+/), lines = []; let cur = ""; for (const w of words) { const tt = cur ? cur + " " + w : w; if (g.measureText(tt).width > maxW && cur) { lines.push(cur); cur = w; } else cur = tt; } if (cur) lines.push(cur); if (lines.length > maxLines) { lines.length = maxLines; lines[maxLines - 1] = lines[maxLines - 1].replace(/.?$/, "…"); } return lines; };
+  days.forEach((d, i) => {
+    const evs = inW.filter(x => x.due_date === d && x.due_time).map(it => ({ it, st: mins(it.due_time), en: mins(it.due_time) + Math.max(durOf(it), 50) })).sort((p, q) => p.st - q.st);
+    let cl = [], clEnd = -1; const out = [];
+    const flush = () => { const lanes = []; cl.forEach(ev => { let l = lanes.findIndex(v => v <= ev.st); if (l < 0) { l = lanes.length; lanes.push(0); } lanes[l] = ev.en; ev.lane = l; }); cl.forEach(ev => { ev.n = lanes.length; out.push(ev); }); cl = []; };
+    evs.forEach(ev => { if (cl.length && ev.st >= clEnd) { flush(); clEnd = -1; } cl.push(ev); clEnd = Math.max(clEnd, ev.en); }); if (cl.length) flush();
+    out.forEach(ev => {
+      const col = (ev.it.color || (catOf(ev.it.id) || {}).color || COLORS[5]);
+      const x = gx + i * cw + 4 + (cw - 8) / ev.n * ev.lane, w = (cw - 8) / ev.n - 3;
+      const y = bodyTop + 10 + (ev.st - s0 * 60) / 60 * RH + 1, hh = Math.max(30, (ev.en - ev.st) / 60 * RH - 3);
+      g.globalAlpha = ev.it.done ? .45 : 1;
+      g.fillStyle = col + "33"; rr(x, y, w, hh, 10); g.fill();
+      g.fillStyle = col; g.fillRect(x, y + 6, 4, hh - 12);
+      g.textAlign = "left"; g.fillStyle = "#6b6b70"; g.font = `700 12px ${FONT}`;
+      g.fillText(ev.it.due_time + (durOf(ev.it) ? "–" + ev.it.due_end : ""), x + 12, y + 18);
+      g.fillStyle = "#1c1c1e"; g.font = `600 14px ${FONT}`;
+      const ls = wrap(ev.it.text, w - 18, Math.max(1, Math.floor((hh - 26) / 17)));
+      ls.forEach((l, k) => { g.fillText(l, x + 12, y + 37 + k * 17); if (ev.it.done) { g.fillRect(x + 12, y + 33 + k * 17, g.measureText(l).width, 1.5); } });
+      g.globalAlpha = 1;
+    });
+    // senza ora, in fondo
+    const alld = inW.filter(x => x.due_date === d && !x.due_time);
+    g.textAlign = "left"; g.font = `600 13px ${FONT}`;
+    alld.slice(0, 3).forEach((it, k) => { const y = bodyTop + (e0 - s0) * RH + 30 + k * 0; g.globalAlpha = it.done ? .45 : 1; g.fillStyle = "#1c1c1e"; g.fillText("• " + wrap(it.text, cw - 14, 1)[0], gx + i * cw + 8, y + k * 18 + 8); g.globalAlpha = 1; });
+  });
+  const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+  const file = new File([blob], "settimana-organize.png", { type: "image/png" });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "La mia settimana" }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+  const u = URL.createObjectURL(blob), l = document.createElement("a"); l.href = u; l.download = "settimana-organize.png"; document.body.append(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
+  toast("Immagine salvata: allegala su WhatsApp");
 }
 function shareWeek(days, dated) {
   const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
