@@ -212,7 +212,7 @@ function toggleDone(id) {
 // ================= routing =================
 function parseHash() {
   const h = location.hash.slice(1);
-  if (["today", "scheduled", "all", "done", "spese", "preventivi", "liste", "riepilogo", "cestino"].includes(h)) return { v: h };
+  if (["today", "scheduled", "all", "done", "spese", "preventivi", "liste", "riepilogo", "cestino", "focus"].includes(h)) return { v: h };
   if (h.startsWith("c-") && items[h.slice(2)]) return { v: "cat", id: h.slice(2) };
   if (h.startsWith("i-") && items[h.slice(2)]) { const c = catOf(h.slice(2)); return { v: "cat", id: c.id, hl: h.slice(2) }; }
   return { v: "today" };
@@ -222,6 +222,7 @@ window.addEventListener("hashchange", () => { route = parseHash(); searchQ = "";
 
 // ================= render =================
 function render() {
+  clearInterval(focusTimer);
   const app = $("#app");
   const inList = true;
   const side = renderSide(), main = renderMain();
@@ -302,6 +303,8 @@ function renderSide() {
           h("span", { class: "ico", style: { "--c": "#34c759" } }, "€"), h("span", { class: "nm" }, "Spese"), h("span", { class: "ct" }, fmtEur(monthTotal(thisMonth()))), h("span", { class: "chev" }, icon("chev"))),
         h("button", { class: "cat" + (route.v === "preventivi" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("preventivi"); } },
           h("span", { class: "ico", style: { "--c": "#ff9500" } }, "?"), h("span", { class: "nm" }, "Preventivi"), h("span", { class: "ct" }, fmtEur(prevTotal())), h("span", { class: "chev" }, icon("chev"))),
+        h("button", { class: "cat" + (route.v === "focus" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("focus"); } },
+          h("span", { class: "ico", style: { "--c": "#ff5a3c" } }, "🍅"), h("span", { class: "nm" }, "Focus"), h("span", { class: "chev" }, icon("chev"))),
         h("button", { class: "cat" + (route.v === "riepilogo" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; riepDay = today(); go("riepilogo"); } },
           h("span", { class: "ico", style: { "--c": "#34c759" } }, icon("done")), h("span", { class: "nm" }, "Riepilogo"), h("span", { class: "chev" }, icon("chev"))),
         h("button", { class: "cat" + (route.v === "cestino" && !searchQ ? " on" : ""), onclick: () => { searchQ = ""; go("cestino"); } },
@@ -331,6 +334,7 @@ function renderMain() {
   else if (v === "liste") renderListe(inner);
   else if (v === "riepilogo") renderRiepilogo(inner);
   else if (v === "cestino") renderCestino(inner);
+  else if (v === "focus") renderFocus(inner);
   return h("main", { class: "main" }, inner);
 }
 
@@ -366,6 +370,7 @@ function renderMainMobile(inner) {
   else if (v === "liste") renderListe(inner);
   else if (v === "riepilogo") renderRiepilogo(inner);
   else if (v === "cestino") renderCestino(inner);
+  else if (v === "focus") renderFocus(inner);
   const addPill = (cls, label, fn) => h("button", { class: "sp mb " + cls, onclick: fn }, h("b", null, "+"), h("span", null, label));
   inner.append(h("div", { class: "mob-bar" }, addPill("", "Promemoria", () => openNewReminder("")), addPill("orange", "Lista", openNewList), addPill("green", "Nota", openNewNote)));
   return h("main", { class: "main" }, inner);
@@ -818,12 +823,69 @@ function openMenu() {
       row(icon("tray"), "#5b5b60", "Tutti", c.all, go2("all")),
       row(icon("done"), "#8e8e93", "Completati", c.dn, go2("done"))),
     h("div", { class: "form-group" },
+      row("🍅", "#ff5a3c", "Focus (Pomodoro)", 0, go2("focus")),
       row(icon("note"), "#5856d6", "Liste e note", 0, go2("liste")),
       row("€", "#34c759", "Spese", 0, go2("spese")),
       row("?", "#ff9500", "Preventivi", 0, go2("preventivi")),
       row(icon("done"), "#30b0c7", "Riepilogo", 0, go2("riepilogo", () => { riepDay = today(); })),
       row(icon("trash"), "#8e8e93", "Cestino", Object.keys(trash).length, go2("cestino"))),
     h("div", { class: "form-group" }, ...cats().map(cat => row(cat.icon || "•", cat.color || COLORS[5], cat.text, openCount(cat.id), go2("c-" + cat.id)))));
+}
+// ---------- Focus / Pomodoro ----------
+let focusTimer = null;
+const FOCUS_DEFAULT = { phase: "work", work: 25, dur: 25, left: 25 * 60000, end: null, label: "" };
+let focusS = Object.assign({}, FOCUS_DEFAULT, lsGet("focus", {}));
+const saveFocus = () => lsSet("focus", focusS);
+const pomoKey = () => "pomo:" + today();
+function beep() { try { const A = new (window.AudioContext || window.webkitAudioContext)(), o = A.createOscillator(), g = A.createGain(); o.connect(g); g.connect(A.destination); o.frequency.value = 880; g.gain.setValueAtTime(.2, A.currentTime); g.gain.exponentialRampToValueAtTime(.001, A.currentTime + 1.2); o.start(); o.stop(A.currentTime + 1.2); } catch (_) {} try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (_) {} }
+const fmtClock = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return pad(Math.floor(t / 60)) + ":" + pad(t % 60); };
+function focusStart() {
+  focusS.end = Date.now() + focusS.left; saveFocus();
+  api("/api/focus", { end: new Date(focusS.end).toISOString(), phase: focusS.phase, label: focusS.label }).catch(() => {});
+  if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+}
+function focusPause() { if (focusS.end) focusS.left = Math.max(0, focusS.end - Date.now()); focusS.end = null; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }
+function focusReset() { focusS.end = null; focusS.left = focusS.dur * 60000; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }
+function focusFinish() {
+  if (focusS.phase === "work") lsSet(pomoKey(), (lsGet(pomoKey(), 0) || 0) + 1);
+  focusS.phase = focusS.phase === "work" ? "break" : "work";
+  focusS.dur = focusS.phase === "break" ? 5 : focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus();
+  beep(); toast(focusS.phase === "break" ? "Pomodoro finito! 🍅 Pausa" : "Pausa finita: si riparte");
+}
+function renderFocus(inner) {
+  const t = today(), running = !!focusS.end, work = focusS.phase === "work";
+  const col = work ? "#ff5a3c" : "#34c759";
+  const R = 110, C = 2 * Math.PI * R;
+  const left = () => focusS.end ? focusS.end - Date.now() : focusS.left;
+  const time = h("div", { class: "fc-time" }, fmtClock(left()));
+  const arc = h("circle", { cx: 130, cy: 130, r: R, fill: "none", stroke: col, "stroke-width": 14, "stroke-linecap": "round", "stroke-dasharray": C, transform: "rotate(-90 130 130)" });
+  const setArc = () => arc.setAttribute("stroke-dashoffset", String(C * (1 - Math.max(0, Math.min(1, left() / (focusS.dur * 60000))))));
+  const ring = document.createElementNS("http://www.w3.org/2000/svg", "svg"); ring.setAttribute("viewBox", "0 0 260 260"); ring.setAttribute("class", "fc-ring");
+  const bg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  ["cx:130", "cy:130", `r:${R}`, "fill:none", "stroke:rgba(120,120,128,.18)", "stroke-width:14"].forEach(kv => { const [k, v] = kv.split(":"); bg.setAttribute(k, v); });
+  const arcSvg = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  for (const a of arc.getAttributeNames()) arcSvg.setAttribute(a, arc.getAttribute(a));
+  ring.append(bg, arcSvg);
+  const setArcSvg = () => arcSvg.setAttribute("stroke-dashoffset", String(C * (1 - Math.max(0, Math.min(1, left() / (focusS.dur * 60000))))));
+  setArcSvg();
+  const todayItems = Object.values(items).filter(x => x.parent && x.due_date === t && !x.done && x.kind !== "note").sort(byDue);
+  const sel = h("select", { class: "fc-sel", onchange: e => { focusS.label = e.target.value; saveFocus(); if (focusS.end) focusStart(); } },
+    h("option", { value: "" }, "Su cosa ti concentri? (facoltativo)"), ...todayItems.map(x => h("option", { value: x.text, selected: focusS.label === x.text }, x.text)));
+  const btn1 = (label, fn, cls) => h("button", { class: "fc-btn " + (cls || ""), onclick: () => { fn(); render(); } }, label);
+  const chips = !running && work ? h("div", { class: "fc-chips" }, [15, 25, 45].map(m => h("button", { class: "chip" + (focusS.work === m ? " on" : ""), onclick: () => { focusS.work = m; focusS.dur = m; focusS.left = m * 60000; saveFocus(); render(); } }, m + " min"))) : null;
+  inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Focus")),
+    h("div", { class: "fc-card", style: { "--c": col } },
+      h("div", { class: "fc-phase" }, work ? "Concentrazione" : "Pausa"),
+      h("div", { class: "fc-wrap" }, ring, time),
+      work ? sel : null, chips,
+      h("div", { class: "fc-btns" }, running ? btn1("Pausa", focusPause) : btn1(focusS.left < focusS.dur * 60000 ? "Riprendi" : work ? "Avvia" : "Avvia pausa", focusStart, "main"),
+        (running || focusS.left < focusS.dur * 60000) ? btn1("Ricomincia", focusReset, "ghost") : null,
+        !work ? btn1("Salta pausa", () => { focusS.phase = "work"; focusS.dur = focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }, "ghost") : null),
+      h("div", { class: "fc-count" }, "🍅 ".repeat(Math.min(12, lsGet(pomoKey(), 0) || 0)) || "", h("small", null, (lsGet(pomoKey(), 0) || 0) + " oggi"))));
+  focusTimer = setInterval(() => {
+    if (focusS.end && focusS.end - Date.now() <= 0) { clearInterval(focusTimer); focusFinish(); render(); return; }
+    time.textContent = fmtClock(left()); setArcSvg();
+  }, 500);
 }
 function renderCestino(inner) {
   inner.append(h("div", { class: "big-title" }, "Cestino"), h("p", { class: "page-sub" }, "Quello che elimini resta qui e lo puoi ripristinare"));

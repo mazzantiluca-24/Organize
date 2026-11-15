@@ -126,6 +126,17 @@ async function runReminders(env) {
   }
 }
 
+// Focus (Pomodoro): avviso sul telefono quando finisce, anche ad app chiusa
+async function runFocus(env) {
+  const raw = await getSetting(env, "focus"); if (!raw) return;
+  let f; try { f = JSON.parse(raw); } catch (_) { await setSetting(env, "focus", ""); return; }
+  if (!f.end || Date.parse(f.end) > Date.now()) return;
+  await setSetting(env, "focus", "");
+  const origin = await getSetting(env, "origin"); if (!origin) return;
+  if (Date.now() - Date.parse(f.end) > 10 * 60000) return;
+  const work = f.phase !== "break";
+  await pushAll(env, origin, { title: work ? "Pomodoro finito 🍅" : "Pausa finita", body: work ? (f.label ? f.label + " · fai una pausa di 5 minuti" : "Fai una pausa di 5 minuti") : "Si riparte", tag: "focus", url: "/#focus" });
+}
 // riepilogo serale: una volta al giorno, dopo le 21, avviso con quanti impegni fatti (non cancella nulla)
 async function runSummary(env) {
   const origin = await getSetting(env, "origin");
@@ -205,6 +216,7 @@ async function api(req, env, url, ctx) {
     const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")}, deleted_at FROM items`).all()).results;
     return json({ items: rows });
   }
+  if (p === "/api/focus" && m === "POST") { await setSetting(env, "focus", body.end ? JSON.stringify({ end: String(body.end).slice(0, 30), phase: body.phase === "break" ? "break" : "work", label: String(body.label || "").slice(0, 100) }) : ""); return json({ ok: true }); }
   if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(Promise.all([G.run(env, { pushOnly: true }), C.run(env, { pushOnly: true })])); return json({ ok: true }); }
   if (p === "/api/settings" && m === "GET") {
     const calToken = await ensureSetting(env, "cal_token", () => rand(18));
@@ -273,6 +285,6 @@ export default {
   },
   async scheduled(event, env, ctx) {
     await G.ensureSchema(env).catch(e => console.log("schema", e.message));
-    ctx.waitUntil(Promise.all([runReminders(env), runSummary(env), G.run(env), C.run(env)]));
+    ctx.waitUntil(Promise.all([runReminders(env), runSummary(env), runFocus(env), G.run(env), C.run(env)]));
   },
 };
