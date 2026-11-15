@@ -705,9 +705,17 @@ async function shareImage(days, dated) {
   });
   const blob = await new Promise(r => cv.toBlob(r, "image/png"));
   const file = new File([blob], "settimana-organize.png", { type: "image/png" });
-  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "La mia settimana" }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
-  const u = URL.createObjectURL(blob), l = document.createElement("a"); l.href = u; l.download = "settimana-organize.png"; document.body.append(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
-  toast("Immagine salvata: allegala su WhatsApp");
+  const touch = isMobile() || navigator.maxTouchPoints > 1;
+  if (touch) { try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "La mia settimana" }); return; } } catch (e) { if (e && e.name === "AbortError") return; } }
+  // Mac: copio l'immagine (una sola volta) e apro WhatsApp: basta incollare con ⌘V nella chat
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    window.open("https://web.whatsapp.com/", "_blank");
+    toast("Immagine copiata: nella chat premi ⌘V per incollarla");
+  } catch (_) {
+    const u = URL.createObjectURL(blob), l = document.createElement("a"); l.href = u; l.download = "settimana-organize.png"; document.body.append(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
+    toast("Immagine salvata: allegala su WhatsApp");
+  }
 }
 function shareWeek(days, dated) {
   const a = new Date(days[0] + "T12:00"), z = new Date(days[6] + "T12:00");
