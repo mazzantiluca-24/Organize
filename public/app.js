@@ -833,28 +833,42 @@ function openMenu() {
 }
 // ---------- Focus / Pomodoro ----------
 let focusTimer = null;
-const FOCUS_DEFAULT = { phase: "work", work: 25, dur: 25, left: 25 * 60000, end: null, label: "" };
+const FOCUS_DEFAULT = { mode: "pomo", phase: "work", work: 25, dur: 25, left: 25 * 60000, end: null, label: "", hiit: { rounds: 3, w: 60, r: 30 }, round: 1 };
 let focusS = Object.assign({}, FOCUS_DEFAULT, lsGet("focus", {}));
 const saveFocus = () => lsSet("focus", focusS);
 const pomoKey = () => "pomo:" + today();
 function beep() { try { const A = new (window.AudioContext || window.webkitAudioContext)(), o = A.createOscillator(), g = A.createGain(); o.connect(g); g.connect(A.destination); o.frequency.value = 880; g.gain.setValueAtTime(.2, A.currentTime); g.gain.exponentialRampToValueAtTime(.001, A.currentTime + 1.2); o.start(); o.stop(A.currentTime + 1.2); } catch (_) {} try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (_) {} }
 const fmtClock = ms => { const t = Math.max(0, Math.ceil(ms / 1000)); return pad(Math.floor(t / 60)) + ":" + pad(t % 60); };
+let wakeLock = null;
+async function keepAwake(on) { try { if (on && navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen"); else if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (_) {} }
+const isHiit = () => focusS.mode === "hiit";
+// quanto manca alla fine di tutto l'allenamento (per l'avviso sul telefono)
+function hiitTotalLeft() { const { rounds, w, r } = focusS.hiit, cur = focusS.end ? Math.max(0, focusS.end - Date.now()) : focusS.left; return focusS.phase === "work" ? cur + (rounds - focusS.round) * (r + w) * 1000 : cur + w * 1000 + (rounds - focusS.round - 1) * (r + w) * 1000; }
 function focusStart() {
-  focusS.end = Date.now() + focusS.left; saveFocus();
-  api("/api/focus", { end: new Date(focusS.end).toISOString(), phase: focusS.phase, label: focusS.label }).catch(() => {});
+  focusS.end = Date.now() + focusS.left; saveFocus(); keepAwake(true);
+  const endAt = isHiit() ? Date.now() + hiitTotalLeft() : focusS.end;
+  api("/api/focus", { end: new Date(endAt).toISOString(), phase: focusS.phase, mode: focusS.mode, label: focusS.label }).catch(() => {});
   if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
 }
-function focusPause() { if (focusS.end) focusS.left = Math.max(0, focusS.end - Date.now()); focusS.end = null; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }
-function focusReset() { focusS.end = null; focusS.left = focusS.dur * 60000; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }
+function focusPause() { if (focusS.end) focusS.left = Math.max(0, focusS.end - Date.now()); focusS.end = null; saveFocus(); keepAwake(false); api("/api/focus", { end: null }).catch(() => {}); }
+function focusReset() { focusS.end = null; focusS.phase = "work"; focusS.round = 1; focusS.dur = isHiit() ? focusS.hiit.w / 60 : focusS.work; focusS.left = focusS.dur * 60000; saveFocus(); keepAwake(false); api("/api/focus", { end: null }).catch(() => {}); }
+function setMode(m) { focusS.mode = m; focusReset(); }
 function focusFinish() {
+  if (isHiit()) {
+    const { rounds, w, r } = focusS.hiit;
+    if (focusS.phase === "work" && focusS.round >= rounds) { lsSet(pomoKey() + "h", (lsGet(pomoKey() + "h", 0) || 0) + 1); focusReset(); beep(); setTimeout(beep, 400); toast("Allenamento finito! 💪"); return; }
+    if (focusS.phase === "work") { focusS.phase = "break"; focusS.dur = r / 60; } else { focusS.phase = "work"; focusS.round++; focusS.dur = w / 60; }
+    focusS.left = focusS.dur * 60000; focusS.end = Date.now() + focusS.left; saveFocus(); beep();
+    return;
+  }
   if (focusS.phase === "work") lsSet(pomoKey(), (lsGet(pomoKey(), 0) || 0) + 1);
   focusS.phase = focusS.phase === "work" ? "break" : "work";
-  focusS.dur = focusS.phase === "break" ? 5 : focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus();
+  focusS.dur = focusS.phase === "break" ? 5 : focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus(); keepAwake(false);
   beep(); toast(focusS.phase === "break" ? "Pomodoro finito! 🍅 Pausa" : "Pausa finita: si riparte");
 }
 function renderFocus(inner) {
-  const t = today(), running = !!focusS.end, work = focusS.phase === "work";
-  const col = work ? "#ff5a3c" : "#34c759";
+  const t = today(), running = !!focusS.end, work = focusS.phase === "work", hi = isHiit();
+  const col = work ? (hi ? "#ff9500" : "#ff5a3c") : "#34c759";
   const R = 110, C = 2 * Math.PI * R;
   const left = () => focusS.end ? focusS.end - Date.now() : focusS.left;
   const time = h("div", { class: "fc-time" }, fmtClock(left()));
@@ -871,17 +885,24 @@ function renderFocus(inner) {
   const todayItems = Object.values(items).filter(x => x.parent && x.due_date === t && !x.done && x.kind !== "note").sort(byDue);
   const sel = h("select", { class: "fc-sel", onchange: e => { focusS.label = e.target.value; saveFocus(); if (focusS.end) focusStart(); } },
     h("option", { value: "" }, "Su cosa ti concentri? (facoltativo)"), ...todayItems.map(x => h("option", { value: x.text, selected: focusS.label === x.text }, x.text)));
+  const idleH = hi && !running && focusS.round === 1 && work && focusS.left === focusS.hiit.w * 1000;
+  const setH = (rounds, w, r) => { focusS.hiit = { rounds, w, r }; focusReset(); render(); };
+  const num = (v, lab, min, max, k) => h("label", { class: "fc-num" }, h("span", null, lab), h("input", { type: "number", inputmode: "numeric", min, max, value: v, onchange: e => { const x = Math.max(min, Math.min(max, +e.target.value || min)); const hh = Object.assign({}, focusS.hiit, { [k]: x }); setH(hh.rounds, hh.w, hh.r); } }));
+  const hiitSetup = !idleH ? null : h("div", { class: "fc-hiit" },
+    h("div", { class: "fc-chips" }, [[3, 60, 30, "3 × 1' · stop 30\""], [3, 180, 60, "3 × 3' · stop 1'"]].map(([a, b2, c2, l]) => h("button", { class: "chip" + (focusS.hiit.rounds === a && focusS.hiit.w === b2 && focusS.hiit.r === c2 ? " on" : ""), onclick: () => setH(a, b2, c2) }, l))),
+    h("div", { class: "fc-nums" }, num(focusS.hiit.rounds, "Serie", 1, 30, "rounds"), num(focusS.hiit.w, "Lavoro (sec)", 5, 3600, "w"), num(focusS.hiit.r, "Riposo (sec)", 0, 3600, "r")));
   const btn1 = (label, fn, cls) => h("button", { class: "fc-btn " + (cls || ""), onclick: () => { fn(); render(); } }, label);
-  const chips = !running && work ? h("div", { class: "fc-chips" }, [15, 25, 45].map(m => h("button", { class: "chip" + (focusS.work === m ? " on" : ""), onclick: () => { focusS.work = m; focusS.dur = m; focusS.left = m * 60000; saveFocus(); render(); } }, m + " min"))) : null;
+  const chips = !running && work && !hi ? h("div", { class: "fc-chips" }, [15, 25, 45].map(m => h("button", { class: "chip" + (focusS.work === m ? " on" : ""), onclick: () => { focusS.work = m; focusS.dur = m; focusS.left = m * 60000; saveFocus(); render(); } }, m + " min"))) : null;
   inner.append(h("div", { class: "sp-head" }, h("div", { class: "big-title" }, "Focus")),
     h("div", { class: "fc-card", style: { "--c": col } },
-      h("div", { class: "fc-phase" }, work ? "Concentrazione" : "Pausa"),
+      h("div", { class: "fc-modes" }, [["pomo", "🍅 Pomodoro"], ["hiit", "💪 Allenamento"]].map(([m, l]) => h("button", { class: "chip" + (focusS.mode === m ? " on" : ""), onclick: () => { if (focusS.mode !== m) { if (focusS.end) focusPause(); setMode(m); render(); } } }, l))),
+      h("div", { class: "fc-phase" }, hi ? (work ? "Lavoro" : "Riposo") + " · serie " + focusS.round + " di " + focusS.hiit.rounds : work ? "Concentrazione" : "Pausa"),
       h("div", { class: "fc-wrap" }, ring, time),
-      work ? sel : null, chips,
-      h("div", { class: "fc-btns" }, running ? btn1("Pausa", focusPause) : btn1(focusS.left < focusS.dur * 60000 ? "Riprendi" : work ? "Avvia" : "Avvia pausa", focusStart, "main"),
-        (running || focusS.left < focusS.dur * 60000) ? btn1("Ricomincia", focusReset, "ghost") : null,
-        !work ? btn1("Salta pausa", () => { focusS.phase = "work"; focusS.dur = focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }, "ghost") : null),
-      h("div", { class: "fc-count" }, "🍅 ".repeat(Math.min(12, lsGet(pomoKey(), 0) || 0)) || "", h("small", null, (lsGet(pomoKey(), 0) || 0) + " oggi"))));
+      work && !hi ? sel : null, hi ? hiitSetup : chips,
+      h("div", { class: "fc-btns" }, running ? btn1("Pausa", focusPause) : btn1(focusS.left < focusS.dur * 60000 || focusS.round > 1 ? "Riprendi" : work ? "Avvia" : "Avvia pausa", focusStart, "main"),
+        (running || focusS.left < focusS.dur * 60000 || focusS.round > 1) ? btn1("Ricomincia", focusReset, "ghost") : null,
+        !work && !hi ? btn1("Salta pausa", () => { focusS.phase = "work"; focusS.dur = focusS.work; focusS.left = focusS.dur * 60000; focusS.end = null; saveFocus(); api("/api/focus", { end: null }).catch(() => {}); }, "ghost") : null),
+      hi ? h("div", { class: "fc-count" }, h("small", null, (lsGet(pomoKey() + "h", 0) || 0) + " allenamenti oggi · lascia lo schermo acceso")) : h("div", { class: "fc-count" }, "🍅 ".repeat(Math.min(12, lsGet(pomoKey(), 0) || 0)) || "", h("small", null, (lsGet(pomoKey(), 0) || 0) + " oggi"))));
   focusTimer = setInterval(() => {
     if (focusS.end && focusS.end - Date.now() <= 0) { clearInterval(focusTimer); focusFinish(); render(); return; }
     time.textContent = fmtClock(left()); setArcSvg();

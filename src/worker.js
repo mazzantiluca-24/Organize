@@ -135,6 +135,7 @@ async function runFocus(env) {
   const origin = await getSetting(env, "origin"); if (!origin) return;
   if (Date.now() - Date.parse(f.end) > 10 * 60000) return;
   const work = f.phase !== "break";
+  if (f.mode === "hiit") { await pushAll(env, origin, { title: "Allenamento finito 💪", body: f.label || "Bravo!", tag: "focus", url: "/#focus" }); return; }
   await pushAll(env, origin, { title: work ? "Pomodoro finito 🍅" : "Pausa finita", body: work ? (f.label ? f.label + " · fai una pausa di 5 minuti" : "Fai una pausa di 5 minuti") : "Si riparte", tag: "focus", url: "/#focus" });
 }
 // riepilogo serale: una volta al giorno, dopo le 21, avviso con quanti impegni fatti (non cancella nulla)
@@ -216,7 +217,7 @@ async function api(req, env, url, ctx) {
     const rows = (await env.DB.prepare(`SELECT id, ${FIELDS.join(", ")}, deleted_at FROM items`).all()).results;
     return json({ items: rows });
   }
-  if (p === "/api/focus" && m === "POST") { await setSetting(env, "focus", body.end ? JSON.stringify({ end: String(body.end).slice(0, 30), phase: body.phase === "break" ? "break" : "work", label: String(body.label || "").slice(0, 100) }) : ""); return json({ ok: true }); }
+  if (p === "/api/focus" && m === "POST") { await setSetting(env, "focus", body.end ? JSON.stringify({ end: String(body.end).slice(0, 30), phase: body.phase === "break" ? "break" : "work", mode: body.mode === "hiit" ? "hiit" : "pomo", label: String(body.label || "").slice(0, 100) }) : ""); return json({ ok: true }); }
   if (p === "/api/sync" && m === "POST") { await sync(env, body); ctx.waitUntil(Promise.all([G.run(env, { pushOnly: true }), C.run(env, { pushOnly: true })])); return json({ ok: true }); }
   if (p === "/api/settings" && m === "GET") {
     const calToken = await ensureSetting(env, "cal_token", () => rand(18));
