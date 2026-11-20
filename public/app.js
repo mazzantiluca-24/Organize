@@ -1166,6 +1166,77 @@ function viewNote(id) {
   openSheet(head("Nota"), h("div", { class: "view" }, h("div", { class: "v-title" }, it.text), catChip(it), h("div", { class: "v-text" }, it.notes || "")),
     h("div", { class: "sheet-actions two" }, h("button", { class: "act sky", onclick: closeSheet }, "Chiudi"), h("button", { class: "act green", onclick: () => { closeSheet(); openNote(id, { edit: true }); } }, "✎ Modifica")));
 }
+// ---------- tabella Excel (.xlsx) di una lista ----------
+const crcT = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = crcT[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], cd = []; let off = 0;
+  const u16 = n => [n & 255, (n >> 8) & 255], u32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const f of files) {
+    const name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+    const lh = Uint8Array.from([...u32(0x04034b50), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)]);
+    parts.push(lh, name, data);
+    cd.push(Uint8Array.from([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]), name);
+    off += lh.length + name.length + data.length;
+  }
+  const cdSize = cd.reduce((a, x) => a + x.length, 0);
+  const end = Uint8Array.from([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cdSize), ...u32(off), ...u16(0)]);
+  return new Blob([...parts, ...cd, end], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+function listRows(id) {
+  const ks = kids(id);
+  return { ks, speso: ks.reduce((a, k) => a + (k.est ? 0 : k.amount || 0), 0), prev: ks.reduce((a, k) => a + (k.est ? k.amount || 0 : 0), 0) };
+}
+function listXlsx(id) {
+  const it = items[id], { ks, speso, prev } = listRows(id);
+  const esc = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const str = (ref, v, st) => `<c r="${ref}" t="inlineStr"${st ? ` s="${st}"` : ""}><is><t>${esc(v)}</t></is></c>`;
+  const numc = (ref, v, st, f) => `<c r="${ref}" s="${st}">${f ? `<f>${f}</f>` : ""}<v>${v}</v></c>`;
+  let rows = `<row r="1">${str("A1", it.text, 1)}</row><row r="3">${str("A3", "Voce", 1)}${str("B3", "Tipo", 1)}${str("C3", "Importo", 1)}${str("D3", "Fatto", 1)}</row>`;
+  let r = 4; const first = r;
+  ks.forEach(k => { rows += `<row r="${r}">${str("A" + r, k.text)}${str("B" + r, hasAmt(k) ? (k.est ? "Preventivo" : "Speso") : "")}${hasAmt(k) ? numc("C" + r, k.amount, 2) : ""}${str("D" + r, k.done ? "Sì" : "")}</row>`; r++; });
+  const last = Math.max(first, r - 1);
+  r++;
+  rows += `<row r="${r}">${str("A" + r, "Totale speso", 1)}${numc("C" + r, speso, 3, `SUMIF(B${first}:B${last},"Speso",C${first}:C${last})`)}</row>`; r++;
+  if (prev) rows += `<row r="${r}">${str("A" + r, "Preventivi (non ancora spesi)", 1)}${numc("C" + r, prev, 3, `SUMIF(B${first}:B${last},"Preventivo",C${first}:C${last})`)}</row>`;
+  const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const files = [
+    { name: "[Content_Types].xml", data: X + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { name: "_rels/.rels", data: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: "xl/workbook.xml", data: X + `<workbook ${ns} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Tabella" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+    { name: "xl/_rels/workbook.xml.rels", data: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: "xl/styles.xml", data: X + `<styleSheet ${ns}><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00\\ &quot;€&quot;"/></numFmts><fonts count="2"><font><sz val="12"/><name val="Calibri"/></font><font><b/><sz val="12"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` },
+    { name: "xl/worksheets/sheet1.xml", data: X + `<worksheet ${ns}><cols><col min="1" max="1" width="40" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/><col min="3" max="3" width="16" customWidth="1"/><col min="4" max="4" width="8" customWidth="1"/></cols><sheetData>${rows}</sheetData></worksheet>` },
+  ];
+  return zipStore(files);
+}
+function listText(id) {
+  const it = items[id], { ks, speso, prev } = listRows(id);
+  const L = [`*${it.text}*`, ""];
+  ks.forEach(k => L.push(`${k.done ? "✅" : "•"} ${k.text}${hasAmt(k) && k.amount ? " — " + fmtEur(k.amount) + (k.est ? " (preventivo)" : "") : ""}`));
+  L.push("", `*Totale speso: ${fmtEur(speso)}*`); if (prev) L.push(`Preventivi: ${fmtEur(prev)}`);
+  return L.join("\n");
+}
+async function shareFileOrSave(blob, name) {
+  const file = new File([blob], name, { type: blob.type });
+  if (isMobile() || navigator.maxTouchPoints > 1) { try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; } } catch (e) { if (e && e.name === "AbortError") return; } }
+  const u = URL.createObjectURL(blob), a = document.createElement("a"); a.href = u; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 5000);
+  toast("File salvato: allegalo a mail o WhatsApp");
+}
+function listTable(id) {
+  const it = items[id]; if (!it) return;
+  const { ks, speso, prev } = listRows(id);
+  const row = (ic, color, label, fn) => h("button", { class: "field btn", onclick: fn }, h("span", { class: "fi", style: { background: color } }, ic), h("span", { class: "lab" }, label));
+  const name = (it.text || "lista").replace(/[^\w\- àèéìòù]/gi, "").trim().replace(/\s+/g, "-") + ".xlsx";
+  const tbl = h("div", { class: "form-group vrows" }, ...ks.map(k => h("div", { class: "vrow" + (k.done ? " done" : "") }, h("span", { class: "vt" }, k.text), hasAmt(k) && k.amount ? h("span", { class: "eur" + (k.est ? " prev" : "") }, fmtEur(k.amount)) : null)),
+    h("div", { class: "vrow tot" }, h("span", { class: "vt" }, "Totale speso"), h("b", null, fmtEur(speso))), prev ? h("div", { class: "vrow" }, h("span", { class: "vt" }, "Preventivi"), h("span", { class: "eur prev" }, fmtEur(prev))) : null);
+  openSheet(head("Tabella: " + it.text, null, btn("Fine", closeSheet, "r")), tbl,
+    h("div", { class: "form-group" },
+      row("📊", "#1d6f42", "Excel (.xlsx): salva o invia", () => shareFileOrSave(listXlsx(id), name)),
+      row("💬", "#25d366", "Invia come testo su WhatsApp", () => window.open("https://wa.me/?text=" + encodeURIComponent(listText(id)), "_blank")),
+      row("✉️", "#007aff", "Invia per email", () => { location.href = "mailto:?subject=" + encodeURIComponent(it.text) + "&body=" + encodeURIComponent(listText(id).replace(/\*/g, "")); })));
+}
 function viewList(id) {
   const it = items[id]; if (!it) return;
   const box = h("div", { class: "form-group vrows" });
@@ -1176,7 +1247,7 @@ function viewList(id) {
   };
   draw();
   openSheet(head("Lista"), h("div", { class: "view" }, h("div", { class: "v-title" }, it.text), catChip(it), box),
-    h("div", { class: "sheet-actions two" }, h("button", { class: "act sky", onclick: closeSheet }, "Chiudi"), h("button", { class: "act green", onclick: () => { closeSheet(); openList(id, { edit: true }); } }, "✎ Modifica")));
+    h("div", { class: "sheet-actions" }, h("button", { class: "act sky", onclick: closeSheet }, "Chiudi"), h("button", { class: "act", style: { "--c": "#1d6f42" }, onclick: () => { closeSheet(); listTable(id); } }, "📊 Tabella"), h("button", { class: "act green", onclick: () => { closeSheet(); openList(id, { edit: true }); } }, "✎ Modifica")));
 }
 function openNewNote() { const it = newDraft(ensureInbox(), { kind: "note" }); openNote(it.id, { draft: it }); }
 function openNote(id, opts = {}) {
